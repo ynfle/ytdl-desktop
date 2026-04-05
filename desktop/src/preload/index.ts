@@ -22,6 +22,8 @@ const api: YtdlApi = {
   hydrateChannelRowsFromCache: () => ipcRenderer.invoke('channels:hydrateFromCache'),
   resolveChannelInfo: (opts?: { force?: boolean }) =>
     ipcRenderer.invoke('channels:resolveInfo', opts ?? {}),
+  previewChannel: (raw: string) => ipcRenderer.invoke('channels:previewChannel', raw),
+  addChannel: (identifier: string) => ipcRenderer.invoke('channels:addChannel', identifier),
   openExternalUrl: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   loadPlaybackSpot: () => ipcRenderer.invoke('playback:loadSpot'),
   patchPlaybackSpot: (patch) => ipcRenderer.invoke('playback:patchSpot', patch),

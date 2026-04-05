@@ -25,7 +25,12 @@ import {
   broadcastDone
 } from './broadcast'
 import { getMediaAuth } from './media-server'
-import { readChannelsFile, scanLibraryVideos } from './library-scan'
+import { isChannelRowValidForAdd, normalizeChannelInput } from './channel-input'
+import {
+  appendChannelLine,
+  readChannelsLinesOrEmpty,
+  scanLibraryVideos
+} from './library-scan'
 import { loadPlaybackSpotForRoot, patchPlaybackSpot } from './playback-spot-cache'
 import { syncChannelsJob, syncYtrecJob } from './sync-jobs'
 import { runWithConcurrency } from './yt-dlp-runner'
@@ -100,7 +105,7 @@ export function registerAppIpc(): void {
   ipcMain.handle('channels:readIdentifiers', async () => {
     try {
       const root = getDataDir()
-      const identifiers = await readChannelsFile(root)
+      const identifiers = await readChannelsLinesOrEmpty(root)
       return { ok: true as const, identifiers }
     } catch (e) {
       console.error(LOG, 'channels:readIdentifiers', e)
@@ -111,7 +116,7 @@ export function registerAppIpc(): void {
   ipcMain.handle('channels:hydrateFromCache', async () => {
     try {
       const root = resolve(getDataDir())
-      const lines = await readChannelsFile(root)
+      const lines = await readChannelsLinesOrEmpty(root)
       const cache = await loadChannelMetaCache()
       let cacheHits = 0
       const rows: ChannelInfoRow[] = await Promise.all(
@@ -140,6 +145,135 @@ export function registerAppIpc(): void {
     }
   })
 
+  ipcMain.handle('channels:previewChannel', async (_e, raw: unknown) => {
+    if (state.syncRunning) {
+      return {
+        ok: false as const,
+        error: 'A download is in progress; try again when it finishes.'
+      }
+    }
+    if (state.channelMetaRunning) {
+      return {
+        ok: false as const,
+        error: 'Channel lookup is already running; wait for it to finish.'
+      }
+    }
+    if (typeof raw !== 'string') {
+      return { ok: false as const, error: 'Invalid input.' }
+    }
+    const identifier = normalizeChannelInput(raw)
+    if (!identifier) {
+      return {
+        ok: false as const,
+        error: 'Enter a YouTube channel URL or slug (@handle, c/name, channel/UC…).'
+      }
+    }
+    const root = resolve(getDataDir())
+    try {
+      const lines = await readChannelsLinesOrEmpty(root)
+      if (lines.includes(identifier)) {
+        return { ok: false as const, error: 'This channel is already in channels.txt.' }
+      }
+    } catch (e) {
+      console.error(LOG, 'channels:previewChannel read list', e)
+      return { ok: false as const, error: String(e) }
+    }
+
+    try {
+      const { row, logoSourceUrl } = await resolveChannelRow(root, identifier)
+      if (!isChannelRowValidForAdd(row)) {
+        console.warn(LOG, 'channels:previewChannel row failed validation', identifier, {
+          hasName: Boolean(row.displayName?.trim()),
+          hasLogo: Boolean(row.logoUrl),
+          rowError: row.error
+        })
+        return {
+          ok: false as const,
+          error:
+            'Could not resolve this channel’s name and profile picture. Check the URL or slug and try again.'
+        }
+      }
+      const cache = await loadChannelMetaCache()
+      upsertChannelMeta(cache, root, identifier, row, logoSourceUrl)
+      await saveChannelMetaCache(cache)
+      console.info(LOG, 'channels:previewChannel ok', { identifier, displayName: row.displayName })
+      return { ok: true as const, identifier, row }
+    } catch (e) {
+      console.error(LOG, 'channels:previewChannel', e)
+      return { ok: false as const, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('channels:addChannel', async (_e, identifierParam: unknown) => {
+    if (state.syncRunning) {
+      return {
+        ok: false as const,
+        error: 'A download is in progress; try again when it finishes.'
+      }
+    }
+    if (typeof identifierParam !== 'string') {
+      return { ok: false as const, error: 'Invalid identifier.' }
+    }
+    const identifier = normalizeChannelInput(identifierParam)
+    if (!identifier) {
+      return { ok: false as const, error: 'Invalid channel identifier.' }
+    }
+    const root = resolve(getDataDir())
+    try {
+      const lines = await readChannelsLinesOrEmpty(root)
+      if (lines.includes(identifier)) {
+        return { ok: false as const, duplicate: true as const }
+      }
+    } catch (e) {
+      console.error(LOG, 'channels:addChannel read list', e)
+      return { ok: false as const, error: String(e) }
+    }
+
+    const cache = await loadChannelMetaCache()
+    let rowForAppend: ChannelInfoRow | null = null
+
+    const hit = getCachedEntry(cache, root, identifier, CHANNEL_META_TTL_MS, false)
+    if (hit) {
+      const base = storedToRow(identifier, hit)
+      const row = await enrichChannelRowWithLogo(root, identifier, base, hit.logoSourceUrl)
+      if (isChannelRowValidForAdd(row)) {
+        rowForAppend = row
+        console.info(LOG, 'channels:addChannel using cached meta', identifier)
+      }
+    }
+
+    if (!rowForAppend) {
+      try {
+        const { row, logoSourceUrl } = await resolveChannelRow(root, identifier)
+        if (!isChannelRowValidForAdd(row)) {
+          console.warn(LOG, 'channels:addChannel re-resolve invalid', identifier)
+          return {
+            ok: false as const,
+            error:
+              'Could not verify channel (name and profile picture required). Use Look up again, then Add.'
+          }
+        }
+        upsertChannelMeta(cache, root, identifier, row, logoSourceUrl)
+        await saveChannelMetaCache(cache)
+        rowForAppend = row
+        console.info(LOG, 'channels:addChannel resolved fresh', identifier)
+      } catch (e) {
+        console.error(LOG, 'channels:addChannel resolve', e)
+        return { ok: false as const, error: String(e) }
+      }
+    }
+
+    const append = await appendChannelLine(root, identifier)
+    if (append.ok) {
+      console.info(LOG, 'channels:addChannel appended', identifier)
+      return { ok: true as const }
+    }
+    if ('duplicate' in append && append.duplicate) {
+      return { ok: false as const, duplicate: true as const }
+    }
+    return { ok: false as const, error: 'error' in append ? append.error : 'Could not write channels.txt.' }
+  })
+
   ipcMain.handle('channels:resolveInfo', (_e, opts?: { force?: boolean }) => {
     if (state.syncRunning) {
       return { ok: false as const, error: 'A download is in progress; try again when it finishes.' }
@@ -159,7 +293,7 @@ export function registerAppIpc(): void {
         const cache = await loadChannelMetaCache()
         try {
           const root = resolve(getDataDir())
-          const lines = await readChannelsFile(root)
+          const lines = await readChannelsLinesOrEmpty(root)
           const total = lines.length
           const rows: (ChannelInfoRow | undefined)[] = new Array(total)
           let progressCounter = 0

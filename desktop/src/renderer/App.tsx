@@ -140,6 +140,13 @@ export default function App(): React.ReactElement {
             onFetchNames={() => void channels.refreshChannelNames(false)}
             onRefetchAll={() => void channels.refreshChannelNames(true)}
             onOpenUrl={handleOpenUrl}
+            addPreview={channels.addPreview}
+            addPreviewLoading={channels.addPreviewLoading}
+            addConfirmBusy={channels.addConfirmBusy}
+            addFormError={channels.addFormError}
+            onLookUpChannel={(raw) => void channels.lookUpChannel(raw)}
+            onCancelAddPreview={channels.cancelAddPreview}
+            onConfirmAddChannel={() => channels.confirmAddChannel()}
           />
         )
       case 'downloads':

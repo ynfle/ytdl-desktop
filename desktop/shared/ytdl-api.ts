@@ -93,6 +93,20 @@ export type YtdlApi = {
     rows?: ChannelInfoRow[]
     error?: string
   }>
+  /**
+   * Resolve one channel via yt-dlp (name + avatar on loopback). Writes display cache on success.
+   * Fails if the row is not fully valid for add or the channel is already in channels.txt.
+   */
+  previewChannel: (raw: string) => Promise<{
+    ok: boolean
+    identifier?: string
+    row?: ChannelInfoRow
+    error?: string
+  }>
+  /**
+   * Append normalized identifier to channels.txt after re-validating metadata (cache or re-resolve).
+   */
+  addChannel: (identifier: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
   openExternalUrl: (url: string) => Promise<{ ok: boolean; error?: string }>
   /** Load resume positions + last session for the current data directory. */
   loadPlaybackSpot: () => Promise<{ ok: boolean; snapshot?: PlaybackSpotSnapshot; error?: string }>

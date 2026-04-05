@@ -19,6 +19,12 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
   const [channelsBusy, setChannelsBusy] = useState(false)
   const [channelsProgress, setChannelsProgress] = useState<string | null>(null)
 
+  /** Validated row from Look up, before user confirms Add to channels.txt. */
+  const [addPreview, setAddPreview] = useState<{ identifier: string; row: ChannelInfoRow } | null>(null)
+  const [addPreviewLoading, setAddPreviewLoading] = useState(false)
+  const [addConfirmBusy, setAddConfirmBusy] = useState(false)
+  const [addFormError, setAddFormError] = useState<string | null>(null)
+
   const loadChannelIdentifiers = useCallback(async () => {
     console.log('[useChannels] hydrating channel rows from cache')
     const r = await window.ytdl.hydrateChannelRowsFromCache()
@@ -35,6 +41,15 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
   useEffect(() => {
     void loadChannelIdentifiers()
   }, [dataDir, loadChannelIdentifiers])
+
+  /** Drop add-channel draft when switching data root. */
+  useEffect(() => {
+    console.log('[useChannels] dataDir changed, clearing add-channel preview')
+    setAddPreview(null)
+    setAddPreviewLoading(false)
+    setAddConfirmBusy(false)
+    setAddFormError(null)
+  }, [dataDir])
 
   /** Subscribe to channel resolve IPC events. */
   useEffect(() => {
@@ -101,11 +116,74 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
     [appendLog]
   )
 
+  const lookUpChannel = useCallback(
+    async (raw: string) => {
+      setAddFormError(null)
+      setAddPreview(null)
+      setAddPreviewLoading(true)
+      try {
+        console.log('[useChannels] previewChannel request')
+        const r = await window.ytdl.previewChannel(raw)
+        if (!r.ok || !r.identifier || !r.row) {
+          const msg = r.error ?? 'Look up failed.'
+          appendLog(`[ui] channel look up: ${msg}\n`)
+          setAddFormError(msg)
+          console.warn('[useChannels] previewChannel failed', msg)
+          return
+        }
+        setAddPreview({ identifier: r.identifier, row: r.row })
+        appendLog(`[ui] channel look up ok: ${r.row.displayName ?? r.identifier}\n`)
+        console.log('[useChannels] previewChannel ok', r.identifier)
+      } finally {
+        setAddPreviewLoading(false)
+      }
+    },
+    [appendLog]
+  )
+
+  const cancelAddPreview = useCallback(() => {
+    console.log('[useChannels] add channel preview cancelled')
+    setAddPreview(null)
+    setAddFormError(null)
+  }, [])
+
+  const confirmAddChannel = useCallback(async (): Promise<boolean> => {
+    if (!addPreview) return false
+    setAddConfirmBusy(true)
+    setAddFormError(null)
+    try {
+      const id = addPreview.identifier
+      console.log('[useChannels] addChannel confirm', id)
+      const r = await window.ytdl.addChannel(id)
+      if (!r.ok) {
+        const msg = r.duplicate ? 'This channel is already in channels.txt.' : (r.error ?? 'Add failed.')
+        appendLog(`[ui] add channel: ${msg}\n`)
+        setAddFormError(msg)
+        console.warn('[useChannels] addChannel failed', msg)
+        return false
+      }
+      appendLog(`[ui] added channel ${id}\n`)
+      setAddPreview(null)
+      await loadChannelIdentifiers()
+      console.log('[useChannels] addChannel done', id)
+      return true
+    } finally {
+      setAddConfirmBusy(false)
+    }
+  }, [addPreview, appendLog, loadChannelIdentifiers])
+
   return {
     channelRows,
     channelsBusy,
     channelsProgress,
     loadChannelIdentifiers,
-    refreshChannelNames
+    refreshChannelNames,
+    addPreview,
+    addPreviewLoading,
+    addConfirmBusy,
+    addFormError,
+    lookUpChannel,
+    cancelAddPreview,
+    confirmAddChannel
   }
 }
