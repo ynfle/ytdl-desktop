@@ -2,6 +2,8 @@
 
 Electron desktop UI for a local [**yt-dlp**](https://github.com/yt-dlp/yt-dlp) workflow: channel sync, **ytrec** recommended feed, library playback, and PiP-style floating player. Unofficial; not affiliated with yt-dlp.
 
+Aside from one frontend design pass with **Opus 4.6**, this repository was developed entirely with **Composer 2** from [Cursor](https://cursor.com).
+
 ## Repository layout
 
 | Path | Purpose |
