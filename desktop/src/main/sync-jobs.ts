@@ -4,7 +4,7 @@ import { broadcastLog } from './broadcast'
 import { readChannelsFile } from './library-scan'
 import { runYtDlp } from './yt-dlp-runner'
 
-/** Channel download: mirrors download_videos.sh (non-ytrec branch). */
+/** Channel download: mirrors scripts/download_videos.sh (non-ytrec branch). */
 export async function syncChannelsJob(dataRoot: string): Promise<void> {
   const lines = await readChannelsFile(dataRoot)
   broadcastLog(`[ytdl] channels.txt: ${lines.length} lines\n`)
@@ -35,7 +35,7 @@ export async function syncChannelsJob(dataRoot: string): Promise<void> {
   }
 }
 
-/** Recommended feed: mirrors download_videos.sh ytrec branch. */
+/** Recommended feed: mirrors scripts/download_videos.sh ytrec branch. */
 export async function syncYtrecJob(dataRoot: string, count: number): Promise<void> {
   await fs.mkdir(join(dataRoot, 'videos', 'rec'), { recursive: true })
   const args = [

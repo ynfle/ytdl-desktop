@@ -35,6 +35,8 @@ At the data root:
 
 Older libraries may still have uploader folders or `rec/` **at the data root**; the app still groups those until you move them under `videos/`.
 
+**Migrating an old data folder:** create `videos/`, move each uploader directory into `videos/`, and run `mv rec videos/rec` if you had a root-level `rec/` tree. Keep `channels.txt` and `downloaded.txt` at the data root.
+
 ## Desktop app (dev)
 
 ```bash
