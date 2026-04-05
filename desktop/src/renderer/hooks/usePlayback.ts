@@ -115,6 +115,12 @@ export function usePlayback(
   const [floatingSync, setFloatingSync] = useState<FloatingPlayerSyncPayload | null>(null)
   /** When true, ignore `resumePlaying` from the floating window (e.g. main Stop cleared playback). */
   const suppressFloatingResumeRef = useRef(false)
+  /**
+   * After the floating PiP `<video>` fires `ended`, we advance the playlist and reload the same
+   * BrowserWindow with the next file. While that happens, {@link currentRel} changes — skip the
+   * usual "close floating player on track change" effect so the window is not torn down twice.
+   */
+  const pendingFloatingReopenRef = useRef(false)
   useEffect(() => {
     floatingPlayerActiveRef.current = floatingPlayerActive
   }, [floatingPlayerActive])
@@ -170,6 +176,11 @@ export function usePlayback(
       const v = videoRef.current
       const r = await window.ytdl.mediaUrl(relPath)
       if (!r.ok || !r.url) {
+        if (pendingFloatingReopenRef.current) {
+          pendingFloatingReopenRef.current = false
+          setFloatingPlayerActive(false)
+          console.warn('[usePlayback] floating PiP advance: mediaUrl failed, clearing pending reopen')
+        }
         appendLog(`[ui] mediaUrl failed: ${r.error}\n`)
         return
       }
@@ -183,6 +194,51 @@ export function usePlayback(
           const dur = v.duration
           if (resume != null && dur > 0 && !Number.isNaN(dur) && resume < dur * RESUME_MAX_FRACTION) {
             v.currentTime = Math.min(resume, dur * 0.999)
+          }
+          /** Continuation: floating window already closed on `ended`; hand next track back to PiP. */
+          if (pendingFloatingReopenRef.current && shouldUseNativePictureInPictureOnly()) {
+            pendingFloatingReopenRef.current = false
+            v.pause()
+            const url = v.currentSrc || v.src
+            if (!url) {
+              appendLog('[ui] floating PiP advance: no media URL on main element\n')
+              setFloatingPlayerActive(false)
+              void v.play().catch((e) => appendLog(`[ui] play error: ${String(e)}\n`))
+              return
+            }
+            console.log('[usePlayback] floating PiP: loading next track into floating window', {
+              relPath,
+              urlSample: url.slice(0, 80)
+            })
+            void window.ytdl
+              .openFloatingPlayer({
+                url,
+                currentTime: v.currentTime,
+                volume: v.volume,
+                playing: true
+              })
+              .then((openR) => {
+                if (!openR || typeof openR !== 'object' || !('ok' in openR) || !openR.ok) {
+                  const err =
+                    openR && typeof openR === 'object' && 'error' in openR && typeof openR.error === 'string'
+                      ? openR.error
+                      : 'failed'
+                  appendLog(`[ui] floating player (next track): ${err}\n`)
+                  setFloatingPlayerActive(false)
+                  void v.play().catch((e) => appendLog(`[ui] play error: ${String(e)}\n`))
+                  return
+                }
+                setFloatingSync(null)
+                setFloatingPlayerActive(true)
+                console.log('[usePlayback] floating PiP next track window ready')
+              })
+              .catch((e) => {
+                appendLog(`[ui] floating player IPC (next track): ${String(e)}\n`)
+                console.error('[usePlayback] openFloatingPlayer after advance threw', e)
+                setFloatingPlayerActive(false)
+                void v.play().catch((err) => appendLog(`[ui] play error: ${String(err)}\n`))
+              })
+            return
           }
           void v.play().catch((e) => appendLog(`[ui] play error: ${String(e)}\n`))
         }
@@ -261,7 +317,11 @@ export function usePlayback(
 
   /* ── Video event handlers ── */
 
-  const onVideoEnded = useCallback(() => {
+  /**
+   * Clear resume spot for the finished file and move to the next playlist entry.
+   * @returns false if the playlist is exhausted
+   */
+  const advanceAfterEnded = useCallback((): boolean => {
     const pl = playlistRef.current
     const i = cursorRef.current
     const endedRel = pl[i]
@@ -275,13 +335,15 @@ export function usePlayback(
     if (next >= pl.length) {
       appendLog('[ui] playlist finished\n')
       setPlaying(false)
-      return
+      return false
     }
     setCursor(next)
+    return true
   }, [appendLog, allowSpotSaveRef])
 
-  const onVideoEndedRef = useRef(onVideoEnded)
-  onVideoEndedRef.current = onVideoEnded
+  const onVideoEnded = useCallback(() => {
+    advanceAfterEnded()
+  }, [advanceAfterEnded])
 
   const onVideoError = useCallback(() => {
     const v = videoRef.current
@@ -614,6 +676,7 @@ export function usePlayback(
   const stopPlayback = useCallback(() => {
     syncRestoreDocumentPip(true)
     suppressFloatingResumeRef.current = true
+    pendingFloatingReopenRef.current = false
     void window.ytdl.closeFloatingPlayer()
     setFloatingPlayerActive(false)
     const v = videoRef.current
@@ -641,9 +704,13 @@ export function usePlayback(
     }
   }, [])
 
-  /** Tear down floating player when the main window switches to another file. */
+  /** Tear down floating player when the main window switches to another file (not auto-advance from PiP). */
   useEffect(() => {
     if (!floatingPlayerActiveRef.current) return
+    if (pendingFloatingReopenRef.current) {
+      console.log('[usePlayback] keep floating PiP — reopening for next playlist item')
+      return
+    }
     void window.ytdl.closeFloatingPlayer()
   }, [currentRel])
 
@@ -677,6 +744,7 @@ export function usePlayback(
 
   useEffect(() => {
     const offClosed = window.ytdl.onFloatingPlayerClosed((p) => {
+      pendingFloatingReopenRef.current = false
       console.log('[usePlayback] floating player closed', p)
       setFloatingSync(null)
       setFloatingPlayerActive(false)
@@ -704,10 +772,20 @@ export function usePlayback(
     const offEnded = window.ytdl.onFloatingPlayerEnded(() => {
       console.log('[usePlayback] floating player ended → advance playlist')
       setFloatingSync(null)
-      setFloatingPlayerActive(false)
-      onVideoEndedRef.current()
+      const pl = playlistRef.current
+      const i = cursorRef.current
+      if (i + 1 < pl.length) {
+        pendingFloatingReopenRef.current = true
+        console.log('[usePlayback] floating PiP will reopen after next track metadata loads')
+      }
+      const continued = advanceAfterEnded()
+      if (!continued) {
+        pendingFloatingReopenRef.current = false
+        setFloatingPlayerActive(false)
+      }
     })
     const offErr = window.ytdl.onFloatingPlayerError((p) => {
+      pendingFloatingReopenRef.current = false
       appendLog(`[ui] floating player: ${p.message}\n`)
       setFloatingSync(null)
       setFloatingPlayerActive(false)
@@ -717,7 +795,7 @@ export function usePlayback(
       offEnded()
       offErr()
     }
-  }, [appendLog, flushPositionNow, allowSpotSaveRef])
+  }, [appendLog, advanceAfterEnded, flushPositionNow, allowSpotSaveRef])
 
   /** Now Playing / media keys: title and artwork hook for the current file. */
   useEffect(() => {
