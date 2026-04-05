@@ -1,0 +1,32 @@
+# --- Allow only known source at repo root (ignore ad-hoc channel / media dirs) ---
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/AGENTS.md
+!/desktop/
+!/scripts/
+!/examples/
+
+# Editor / local
+/.cursor/
+.DS_Store
+
+# Dependencies & build (inside desktop/)
+desktop/node_modules/
+desktop/out/
+desktop/dist/
+*.log
+
+# User data at repository root only
+/channels.txt
+/downloaded.txt
+/videos/
+/rec/
+
+# Stray media at repository root only
+/*.mp4
+/*.webm
+/*.mkv
+/*.m4a
+/*.mp3

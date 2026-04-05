@@ -1,0 +1,4 @@
+# Copy to channels.txt in your data folder (one channel identifier per line).
+# Examples: @handle, channel/UC…, or playlist-style paths yt-dlp accepts.
+# @example-channel
+# channel/UCxxxxxxxxxxxxxxxxxxxxxxxxxx

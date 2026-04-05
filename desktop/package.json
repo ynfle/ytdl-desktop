@@ -1,0 +1,30 @@
+{
+  "name": "ytdl-desktop",
+  "version": "1.0.0",
+  "description": "Desktop UI for local yt-dlp channel sync, library, and playback",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "build": "electron-vite build",
+    "start": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "lucide-react": "^1.7.0",
+    "motion": "^12.38.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^39.2.6",
+    "electron-vite": "^3.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}

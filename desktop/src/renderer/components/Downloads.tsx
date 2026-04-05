@@ -1,0 +1,115 @@
+import { useEffect, useRef } from 'react'
+import { motion } from 'motion/react'
+import { Download, Tv, Loader2, Terminal } from 'lucide-react'
+
+type Props = {
+  busy: boolean
+  channelsBusy: boolean
+  log: string
+  ytrecCount: number
+  onYtrecCountChange: (n: number) => void
+  onRunChannels: () => void
+  onRunYtrec: () => void
+}
+
+/** Downloads page: action cards for channel sync + ytrec, with live log terminal. */
+export default function DownloadsPage({
+  busy,
+  channelsBusy,
+  log,
+  ytrecCount,
+  onYtrecCountChange,
+  onRunChannels,
+  onRunYtrec
+}: Props) {
+  const anyBusy = busy || channelsBusy
+  const logRef = useRef<HTMLPreElement>(null)
+
+  /** Auto-scroll log to bottom. */
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [log])
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold">Downloads</h1>
+          {busy && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-accent">
+              <Loader2 size={13} className="animate-spin" />
+              Syncing…
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Action cards */}
+      <div className="grid grid-cols-2 gap-3 px-6 py-4 shrink-0">
+        {/* Channel download card */}
+        <motion.button
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.99 }}
+          disabled={anyBusy}
+          onClick={onRunChannels}
+          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
+        >
+          <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
+            <Download size={18} className="text-accent" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Download Channels</p>
+            <p className="text-[11px] text-text-muted mt-0.5">
+              Fetch latest videos from all channels.txt entries
+            </p>
+          </div>
+        </motion.button>
+
+        {/* Ytrec card */}
+        <motion.button
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.99 }}
+          disabled={anyBusy}
+          onClick={onRunYtrec}
+          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
+        >
+          <div className="flex items-center justify-between w-full">
+            <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
+              <Tv size={18} className="text-accent" />
+            </div>
+            {/* Count input */}
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <label className="text-[11px] text-text-muted">count</label>
+              <input
+                type="number"
+                min={1}
+                value={ytrecCount}
+                onChange={(e) => onYtrecCountChange(Math.max(1, Number(e.target.value) || 1))}
+                className="w-14 px-2 py-1 text-xs rounded-md border border-border bg-bg text-text text-center"
+              />
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Download Recommendations</p>
+            <p className="text-[11px] text-text-muted mt-0.5">
+              Fetch YouTube recommended feed (ytrec)
+            </p>
+          </div>
+        </motion.button>
+      </div>
+
+      {/* Log terminal */}
+      <div className="flex-1 flex flex-col min-h-0 mx-6 mb-4 rounded-xl border border-border bg-bg overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-surface">
+          <Terminal size={13} className="text-text-muted" />
+          <span className="text-[11px] text-text-muted font-medium">Output</span>
+        </div>
+        <pre ref={logRef} className="log-terminal flex-1 overflow-auto p-3 text-text-secondary">
+          {log || 'Waiting for sync…'}
+        </pre>
+      </div>
+    </div>
+  )
+}
