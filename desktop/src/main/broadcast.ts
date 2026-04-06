@@ -9,6 +9,13 @@ export function broadcastDone(payload: { ok: boolean; error?: string }): void {
   state.mainWindow?.webContents.send('sync:done', payload)
 }
 
+/** New finished files under `videos/` during sync; renderer should rescan the library. */
+export function broadcastLibraryStale(payload: { reason: 'watch' }): void {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    state.mainWindow.webContents.send('sync:libraryStale', payload)
+  }
+}
+
 export function broadcastChannelProgress(payload: {
   index: number
   total: number

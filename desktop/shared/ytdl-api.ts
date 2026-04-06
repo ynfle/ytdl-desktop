@@ -114,6 +114,8 @@ export type YtdlApi = {
   patchPlaybackSpot: (patch: PlaybackSpotPatch) => Promise<{ ok: boolean; error?: string }>
   onSyncLog: (cb: (chunk: string) => void) => () => void
   onSyncDone: (cb: (payload: { ok: boolean; error?: string }) => void) => () => void
+  /** Fires while sync runs when `videos/` changes (debounced); same rescan path as `sync:done`. */
+  onSyncLibraryStale: (cb: (payload: { reason: 'watch' }) => void) => () => void
   onChannelResolveProgress: (
     cb: (p: { index: number; total: number; identifier: string }) => void
   ) => () => void

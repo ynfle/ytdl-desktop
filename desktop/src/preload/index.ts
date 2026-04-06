@@ -38,6 +38,11 @@ const api: YtdlApi = {
     ipcRenderer.on('sync:done', listener)
     return () => ipcRenderer.removeListener('sync:done', listener)
   },
+  onSyncLibraryStale: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, payload: { reason: 'watch' }) => cb(payload)
+    ipcRenderer.on('sync:libraryStale', listener)
+    return () => ipcRenderer.removeListener('sync:libraryStale', listener)
+  },
   onChannelResolveProgress: (cb) => {
     const listener = (
       _: Electron.IpcRendererEvent,

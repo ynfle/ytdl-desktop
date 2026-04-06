@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { LibraryVideo, PlaybackSpotSnapshot } from '../../shared/ytdl-api'
 import { AnimatePresence, motion } from 'motion/react'
 
 import Sidebar, { type Page } from './components/Sidebar'
@@ -36,6 +37,24 @@ export default function App(): React.ReactElement {
   const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows)
   const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef)
 
+  /** Shared path after `scanLibrary`: merge resume/session from disk into playback state. */
+  const applyLibraryScanResult = useCallback(
+    (result: {
+      videos: LibraryVideo[]
+      freshHydrate: boolean
+      snapshot?: PlaybackSpotSnapshot
+      positionsOnly?: boolean
+    }) => {
+      const valid = new Set(result.videos.map((v) => v.relPath))
+      if (result.freshHydrate && result.snapshot) {
+        playback.restoreFromSnapshot(result.snapshot, valid)
+      } else if (result.positionsOnly && result.snapshot) {
+        playback.mergePositionsFromSnapshot(result.snapshot)
+      }
+    },
+    [playback.restoreFromSnapshot, playback.mergePositionsFromSnapshot]
+  )
+
   /**
    * Initial hydrate: when library refreshes for a new data root,
    * restore the playback session from snapshot.
@@ -45,13 +64,7 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     const run = async (): Promise<void> => {
       const result = await lib.refreshLibrary()
-      if (!result) return
-      const valid = new Set(result.videos.map((v) => v.relPath))
-      if (result.freshHydrate && result.snapshot) {
-        playback.restoreFromSnapshot(result.snapshot, valid)
-      } else if (result.positionsOnly && result.snapshot) {
-        playback.mergePositionsFromSnapshot(result.snapshot)
-      }
+      applyLibraryScanResult(result)
     }
     void run()
     // Only re-run on dataDir change
@@ -66,21 +79,26 @@ export default function App(): React.ReactElement {
     console.log('[App] subscribe sync:done → library rescan')
     const off = window.ytdl.onSyncDone((p) => {
       console.info('[App] sync finished, refreshing library', { ok: p.ok, error: p.error })
-      void lib.refreshLibrary().then((result) => {
-        if (!result) return
-        const valid = new Set(result.videos.map((v) => v.relPath))
-        if (result.freshHydrate && result.snapshot) {
-          playback.restoreFromSnapshot(result.snapshot, valid)
-        } else if (result.positionsOnly && result.snapshot) {
-          playback.mergePositionsFromSnapshot(result.snapshot)
-        }
-      })
+      void lib.refreshLibrary().then(applyLibraryScanResult)
     })
     return () => {
       console.log('[App] unsubscribe sync:done library rescan')
       off()
     }
-  }, [lib.refreshLibrary, playback.restoreFromSnapshot])
+  }, [lib.refreshLibrary, applyLibraryScanResult])
+
+  /** While sync runs, new files under `videos/` trigger a debounced rescan from main. */
+  useEffect(() => {
+    console.log('[App] subscribe sync:libraryStale → library rescan')
+    const off = window.ytdl.onSyncLibraryStale((p) => {
+      console.info('[App] library stale during sync, refreshing', p)
+      void lib.refreshLibrary().then(applyLibraryScanResult)
+    })
+    return () => {
+      console.log('[App] unsubscribe sync:libraryStale')
+      off()
+    }
+  }, [lib.refreshLibrary, applyLibraryScanResult])
 
   /* ── Actions ── */
   const pickDir = useCallback(async () => {
@@ -98,14 +116,8 @@ export default function App(): React.ReactElement {
 
   const handleRescan = useCallback(async () => {
     const result = await lib.refreshLibrary()
-    if (!result) return
-    const valid = new Set(result.videos.map((v) => v.relPath))
-    if (result.freshHydrate && result.snapshot) {
-      playback.restoreFromSnapshot(result.snapshot, valid)
-    } else if (result.positionsOnly && result.snapshot) {
-      playback.mergePositionsFromSnapshot(result.snapshot)
-    }
-  }, [lib, playback])
+    applyLibraryScanResult(result)
+  }, [lib.refreshLibrary, applyLibraryScanResult])
 
   const handleOpenUrl = useCallback(
     (url: string) => {

@@ -1,11 +1,23 @@
 import { join } from 'path'
 import { promises as fs } from 'fs'
-import { broadcastLog } from './broadcast'
+import { broadcastLibraryStale, broadcastLog } from './broadcast'
 import { readChannelsFile } from './library-scan'
 import { runYtDlp } from './yt-dlp-runner'
+import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
 /** Channel download: mirrors scripts/download_videos.sh (non-ytrec branch). */
 export async function syncChannelsJob(dataRoot: string): Promise<void> {
+  const videosWatch = startVideosLibraryWatch(dataRoot, {
+    onTick: () => broadcastLibraryStale({ reason: 'watch' })
+  })
+  try {
+    await runSyncChannelsJobInner(dataRoot)
+  } finally {
+    videosWatch.stop()
+  }
+}
+
+async function runSyncChannelsJobInner(dataRoot: string): Promise<void> {
   const lines = await readChannelsFile(dataRoot)
   broadcastLog(`[ytdl] channels.txt: ${lines.length} lines\n`)
   for (const channel_identifier of lines) {
@@ -37,6 +49,17 @@ export async function syncChannelsJob(dataRoot: string): Promise<void> {
 
 /** Recommended feed: mirrors scripts/download_videos.sh ytrec branch. */
 export async function syncYtrecJob(dataRoot: string, count: number): Promise<void> {
+  const videosWatch = startVideosLibraryWatch(dataRoot, {
+    onTick: () => broadcastLibraryStale({ reason: 'watch' })
+  })
+  try {
+    await runSyncYtrecJobInner(dataRoot, count)
+  } finally {
+    videosWatch.stop()
+  }
+}
+
+async function runSyncYtrecJobInner(dataRoot: string, count: number): Promise<void> {
   await fs.mkdir(join(dataRoot, 'videos', 'rec'), { recursive: true })
   const args = [
     '--cookies-from-browser',
