@@ -63,13 +63,22 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
   return out
 }
 
-export async function readChannelsFile(dataRoot: string): Promise<string[]> {
-  const p = join(dataRoot, 'channels.txt')
-  const text = await fs.readFile(p, 'utf-8')
+/** channels.txt / podcasts.txt line normalization (trim, drop blanks and # comments). */
+function parseSubscriptionLines(text: string): string[] {
   return text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith('#'))
+}
+
+async function readDataRootLinesFile(dataRoot: string, fileName: string): Promise<string[]> {
+  const p = join(dataRoot, fileName)
+  const text = await fs.readFile(p, 'utf-8')
+  return parseSubscriptionLines(text)
+}
+
+export async function readChannelsFile(dataRoot: string): Promise<string[]> {
+  return readDataRootLinesFile(dataRoot, 'channels.txt')
 }
 
 /**
@@ -89,12 +98,7 @@ export async function readPodcastsLinesOrEmpty(dataRoot: string): Promise<string
 }
 
 export async function readPodcastsFile(dataRoot: string): Promise<string[]> {
-  const p = join(dataRoot, PODCASTS_FILE)
-  const text = await fs.readFile(p, 'utf-8')
-  return text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('#'))
+  return readDataRootLinesFile(dataRoot, PODCASTS_FILE)
 }
 
 /**

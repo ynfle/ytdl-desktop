@@ -2,9 +2,10 @@ import { app } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
 import type { ChannelInfoRow } from '../../shared/ytdl-api'
+import { DISPLAY_META_TTL_MS } from './constants'
 
-/** How long a cached channel title is considered fresh (7 days). */
-export const CHANNEL_META_TTL_MS = 7 * 24 * 60 * 60 * 1000
+/** @deprecated Prefer `DISPLAY_META_TTL_MS` from `./constants` — same value. */
+export const CHANNEL_META_TTL_MS = DISPLAY_META_TTL_MS
 
 const CACHE_VERSION = 1 as const
 const CACHE_FILENAME = 'channel-display-cache.json'

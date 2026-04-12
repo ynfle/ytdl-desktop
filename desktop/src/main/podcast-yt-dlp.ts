@@ -3,28 +3,12 @@ import { LOG } from './constants'
 import { folderIdFromFeedUrl } from './podcast-input'
 import { downloadPodcastCover, pathExistsPodcastLogo, podcastLogoFilePath } from './podcast-logos'
 import { podcastLogoLoopbackUrl } from './media-server'
+import {
+  parseYtDlpJsonRecord,
+  pickThumbnailUrlByMaxArea,
+  YT_DLP_BASE_JSON_ARGS
+} from './yt-dlp-json-helpers'
 import { runYtDlpCaptureStdout } from './yt-dlp-runner'
-
-const BASE_YTDLP = ['--no-warnings', '--ignore-errors', '--remote-components', 'ejs:github'] as const
-
-function pickThumbnailFromEntry(entry: Record<string, unknown>): string | null {
-  const thumbs = entry.thumbnails
-  if (!Array.isArray(thumbs) || thumbs.length === 0) return null
-  type T = { url?: string; width?: number; height?: number }
-  let best: T | null = null
-  let bestArea = 0
-  for (const t of thumbs as T[]) {
-    if (typeof t?.url !== 'string' || !t.url.startsWith('http')) continue
-    const w = t.width ?? 0
-    const h = t.height ?? 0
-    const area = w > 0 && h > 0 ? w * h : 1
-    if (area > bestArea) {
-      bestArea = area
-      best = t
-    }
-  }
-  return best?.url ?? null
-}
 
 /** Parse yt-dlp -J for an RSS / playlist URL: title + optional thumbnail. */
 function parsePlaylistJsonDump(raw: string): {
@@ -32,10 +16,9 @@ function parsePlaylistJsonDump(raw: string): {
   thumbnailUrl: string | null
   feedPageUrl: string | null
 } {
-  const trimmed = raw.trim()
-  if (!trimmed) return { displayName: null, thumbnailUrl: null, feedPageUrl: null }
+  const data = parseYtDlpJsonRecord(raw)
+  if (!data) return { displayName: null, thumbnailUrl: null, feedPageUrl: null }
   try {
-    const data = JSON.parse(trimmed) as Record<string, unknown>
     const entries = data.entries
     const topTitle =
       (typeof data.title === 'string' && data.title !== 'NA' && data.title) ||
@@ -60,11 +43,11 @@ function parsePlaylistJsonDump(raw: string): {
           (typeof e.channel === 'string' && e.channel) ||
           null
       }
-      thumbnailUrl = pickThumbnailFromEntry(e)
+      thumbnailUrl = pickThumbnailUrlByMaxArea(e.thumbnails)
     }
 
     if (!thumbnailUrl && Array.isArray(data.thumbnails)) {
-      thumbnailUrl = pickThumbnailFromEntry({ thumbnails: data.thumbnails } as Record<string, unknown>)
+      thumbnailUrl = pickThumbnailUrlByMaxArea(data.thumbnails)
     }
 
     return {
@@ -73,7 +56,7 @@ function parsePlaylistJsonDump(raw: string): {
       feedPageUrl
     }
   } catch (e) {
-    console.warn(LOG, 'podcast yt-dlp JSON parse failed', e)
+    console.warn(LOG, 'podcast yt-dlp JSON walk failed', e)
     return { displayName: null, thumbnailUrl: null, feedPageUrl: null }
   }
 }
@@ -107,7 +90,7 @@ export async function resolvePodcastRowFromFeed(
   opts?: { prefetchedArtworkUrl?: string | null; feedPageUrl?: string | null }
 ): Promise<{ row: PodcastInfoRow; logoSourceUrl?: string | null }> {
   const folderId = folderIdFromFeedUrl(feedUrl)
-  const args = [...BASE_YTDLP, '--playlist-items', '1', '-J', '--skip-download', feedUrl]
+  const args = [...YT_DLP_BASE_JSON_ARGS, '--playlist-items', '1', '-J', '--skip-download', feedUrl]
   let displayName: string | null = null
   let thumbnailFromDump: string | null = null
   let feedPageUrl: string | null = opts?.feedPageUrl ?? null

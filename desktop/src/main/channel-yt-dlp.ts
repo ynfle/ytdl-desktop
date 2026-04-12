@@ -3,6 +3,7 @@ import type { ChannelInfoRow } from '../../shared/ytdl-api'
 import { LOG } from './constants'
 import { channelLogoFilePath, downloadChannelLogo, pathExists } from './channel-logos'
 import { channelLogoLoopbackUrl } from './media-server'
+import { parseYtDlpJsonRecord, YT_DLP_BASE_JSON_ARGS } from './yt-dlp-json-helpers'
 import { runYtDlpCaptureStdout } from './yt-dlp-runner'
 
 export function channelVideosUrl(channel_identifier: string): string {
@@ -48,10 +49,9 @@ function pickChannelAboutMeta(raw: string): {
   page: string | null
   avatarUrl: string | null
 } {
-  const trimmed = raw.trim()
-  if (!trimmed) return { name: null, page: null, avatarUrl: null }
+  const data = parseYtDlpJsonRecord(raw)
+  if (!data) return { name: null, page: null, avatarUrl: null }
   try {
-    const data = JSON.parse(trimmed) as Record<string, unknown>
     const entries = data.entries
     const entry: Record<string, unknown> =
       Array.isArray(entries) && entries[0] && typeof entries[0] === 'object'
@@ -75,10 +75,9 @@ function pickChannelAboutMeta(raw: string): {
 
 /** Parse first playlist/video entry from yt-dlp -J output. */
 function pickNameFromJsonDump(raw: string): { name: string | null; page: string | null } {
-  const trimmed = raw.trim()
-  if (!trimmed) return { name: null, page: null }
+  const data = parseYtDlpJsonRecord(raw)
+  if (!data) return { name: null, page: null }
   try {
-    const data = JSON.parse(trimmed) as Record<string, unknown>
     const entries = data.entries
     if (Array.isArray(entries) && entries[0] && typeof entries[0] === 'object') {
       const e = entries[0] as Record<string, unknown>
@@ -138,7 +137,7 @@ export async function resolveChannelRow(
   channel_identifier: string
 ): Promise<{ row: ChannelInfoRow; logoSourceUrl?: string }> {
   const videosUrl = channelVideosUrl(channel_identifier)
-  const baseArgs = ['--no-warnings', '--ignore-errors', '--remote-components', 'ejs:github'] as const
+  const baseArgs = YT_DLP_BASE_JSON_ARGS
   const aboutUrl = channelAboutUrl(channel_identifier)
 
   let displayName: string | null = null

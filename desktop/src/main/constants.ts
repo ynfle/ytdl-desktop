@@ -1,6 +1,9 @@
 /** Log prefix for main-process diagnostics. */
 export const LOG = '[ytdl-main]' as const
 
+/** Cached channel/podcast display metadata (titles, artwork refs) TTL — 7 days. */
+export const DISPLAY_META_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
 /** Max concurrent yt-dlp metadata processes (channel name lookup). */
 export const CHANNEL_RESOLVE_CONCURRENCY = 4
 

@@ -1,7 +1,15 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { RefreshCw, ExternalLink, Loader2, Radio, Search, UserPlus } from 'lucide-react'
+import { ExternalLink, Loader2, Radio, Search, UserPlus } from 'lucide-react'
 import type { ChannelInfoRow } from '../../../shared/ytdl-api'
+import {
+  SubscriptionMetadataToolbar,
+  SubscriptionResolveProgressBar,
+  subPageLookUpButtonClass,
+  subPageLookUpInputClass,
+  subscriptionToolbarFetchSpinner,
+  useSubscriptionPageLocks
+} from './subscription-page-ui'
 
 type AddChannelBarProps = {
   addPreview: { identifier: string; row: ChannelInfoRow } | null
@@ -58,14 +66,14 @@ function AddChannelBar({
           }}
           disabled={interactionLocked || addPreviewLoading || addConfirmBusy}
           placeholder="https://www.youtube.com/@… or @handle"
-          className="flex-1 min-w-[200px] text-sm px-3 py-2 rounded-lg border border-border bg-bg text-text placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+          className={subPageLookUpInputClass}
           aria-label="Channel URL or slug"
         />
         <button
           type="button"
           onClick={() => onLookUp()}
           disabled={lookUpDisabled}
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-border bg-bg text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className={subPageLookUpButtonClass}
         >
           {addPreviewLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
           Look up
@@ -178,19 +186,13 @@ export default function ChannelsPage({
 }: Props) {
   const [addRawInput, setAddRawInput] = useState('')
 
-  const anyBusy = busy || podcastsBusy || channelsBusy || addPreviewLoading || addConfirmBusy
-  /** Block add Look up while sync or bulk resolve (matches main-process gates). */
-  const addInteractionLocked =
-    busy || podcastsBusy || channelsBusy || addPreviewLoading || addConfirmBusy
-
-  /** Progress fraction 0..1 for the bar (parse "3/12" from progress string). */
-  const progressFraction = (() => {
-    if (!progress) return 0
-    const m = progress.match(/^(\d+)\/(\d+)/)
-    if (!m) return 0
-    const [, cur, total] = m
-    return Number(total) > 0 ? Number(cur) / Number(total) : 0
-  })()
+  const { anyBusy, addInteractionLocked } = useSubscriptionPageLocks(
+    busy,
+    podcastsBusy,
+    channelsBusy,
+    addPreviewLoading,
+    addConfirmBusy
+  )
 
   const addBar = (
     <AddChannelBar
@@ -224,50 +226,23 @@ export default function ChannelsPage({
 
         {rows.length > 0 ? addBar : null}
 
-        {/* Action buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={onReload}
-            disabled={anyBusy}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-surface-raised text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw size={13} />
-            Reload list
-          </button>
-          <button
-            onClick={onFetchNames}
-            disabled={anyBusy}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-surface-raised text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {channelsBusy ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />}
-            Fetch names
-          </button>
-          <button
-            onClick={onRefetchAll}
-            disabled={anyBusy}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-accent-dim text-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Refetch all
-          </button>
-
-          {/* Status text */}
-          <span className="text-[11px] text-text-muted ml-auto">
-            {channelsBusy && progress
+        <SubscriptionMetadataToolbar
+          anyBusy={anyBusy}
+          onReload={onReload}
+          onFetch={onFetchNames}
+          onRefetchAll={onRefetchAll}
+          fetchBusy={channelsBusy}
+          fetchIcon={<Radio size={13} />}
+          fetchIconBusy={subscriptionToolbarFetchSpinner()}
+          fetchLabel="Fetch names"
+          statusHint={
+            channelsBusy && progress
               ? `${progress} · up to 4 yt-dlp at once`
-              : 'cache 7d in app userData'}
-          </span>
-        </div>
+              : 'cache 7d in app userData'
+          }
+        />
 
-        {/* Progress bar -- visible during resolve */}
-        {channelsBusy && (
-          <div className="progress-track">
-            <motion.div
-              className="progress-fill"
-              initial={{ width: 0 }}
-              animate={{ width: `${progressFraction * 100}%` }}
-            />
-          </div>
-        )}
+        <SubscriptionResolveProgressBar active={channelsBusy} progress={progress} />
       </div>
 
       {/* Table */}

@@ -6,16 +6,24 @@ import { readChannelsFile, readPodcastsLinesOrEmpty } from './library-scan'
 import { runYtDlp } from './yt-dlp-runner'
 import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
-/** Channel download: mirrors scripts/download_videos.sh (non-ytrec branch). */
-export async function syncChannelsJob(dataRoot: string): Promise<void> {
+/** Debounced watch on `videos/` so the renderer can refresh while a sync job runs. */
+async function withVideosLibraryWatchDuringJob<T>(
+  dataRoot: string,
+  job: () => Promise<T>
+): Promise<T> {
   const videosWatch = startVideosLibraryWatch(dataRoot, {
     onTick: () => broadcastLibraryStale({ reason: 'watch' })
   })
   try {
-    await runSyncChannelsJobInner(dataRoot)
+    return await job()
   } finally {
     videosWatch.stop()
   }
+}
+
+/** Channel download: mirrors scripts/download_videos.sh (non-ytrec branch). */
+export async function syncChannelsJob(dataRoot: string): Promise<void> {
+  await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncChannelsJobInner(dataRoot))
 }
 
 async function runSyncChannelsJobInner(dataRoot: string): Promise<void> {
@@ -50,26 +58,12 @@ async function runSyncChannelsJobInner(dataRoot: string): Promise<void> {
 
 /** Recommended feed: mirrors scripts/download_videos.sh ytrec branch. */
 export async function syncYtrecJob(dataRoot: string, count: number): Promise<void> {
-  const videosWatch = startVideosLibraryWatch(dataRoot, {
-    onTick: () => broadcastLibraryStale({ reason: 'watch' })
-  })
-  try {
-    await runSyncYtrecJobInner(dataRoot, count)
-  } finally {
-    videosWatch.stop()
-  }
+  await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncYtrecJobInner(dataRoot, count))
 }
 
 /** Podcast RSS: latest episodes as audio via yt-dlp (separate archive from YouTube). */
 export async function syncPodcastsJob(dataRoot: string): Promise<void> {
-  const videosWatch = startVideosLibraryWatch(dataRoot, {
-    onTick: () => broadcastLibraryStale({ reason: 'watch' })
-  })
-  try {
-    await runSyncPodcastsJobInner(dataRoot)
-  } finally {
-    videosWatch.stop()
-  }
+  await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncPodcastsJobInner(dataRoot))
 }
 
 async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {

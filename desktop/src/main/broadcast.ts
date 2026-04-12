@@ -1,19 +1,27 @@
 import type { ChannelInfoRow, PodcastInfoRow } from '../../shared/ytdl-api'
 import { state } from './app-state'
 
+type MainSend = (channel: string, ...args: unknown[]) => void
+
+/** Single place for main-window IPC sends; avoids duplicate destroy checks. */
+function sendMain(channel: string, ...args: unknown[]): void {
+  const w = state.mainWindow
+  if (w && !w.isDestroyed()) {
+    ;(w.webContents.send as MainSend)(channel, ...args)
+  }
+}
+
 export function broadcastLog(chunk: string): void {
-  state.mainWindow?.webContents.send('sync:log', chunk)
+  sendMain('sync:log', chunk)
 }
 
 export function broadcastDone(payload: { ok: boolean; error?: string }): void {
-  state.mainWindow?.webContents.send('sync:done', payload)
+  sendMain('sync:done', payload)
 }
 
 /** New finished files under `videos/` during sync; renderer should rescan the library. */
 export function broadcastLibraryStale(payload: { reason: 'watch' }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('sync:libraryStale', payload)
-  }
+  sendMain('sync:libraryStale', payload)
 }
 
 export function broadcastChannelProgress(payload: {
@@ -21,15 +29,11 @@ export function broadcastChannelProgress(payload: {
   total: number
   identifier: string
 }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('channels:resolveProgress', payload)
-  }
+  sendMain('channels:resolveProgress', payload)
 }
 
 export function broadcastChannelRow(payload: { index: number; row: ChannelInfoRow }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('channels:resolveRow', payload)
-  }
+  sendMain('channels:resolveRow', payload)
 }
 
 export function broadcastChannelResolveDone(payload: {
@@ -37,9 +41,7 @@ export function broadcastChannelResolveDone(payload: {
   rows?: ChannelInfoRow[]
   error?: string
 }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('channels:resolveDone', payload)
-  }
+  sendMain('channels:resolveDone', payload)
 }
 
 export function broadcastPodcastProgress(payload: {
@@ -47,15 +49,11 @@ export function broadcastPodcastProgress(payload: {
   total: number
   feedUrl: string
 }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('podcasts:resolveProgress', payload)
-  }
+  sendMain('podcasts:resolveProgress', payload)
 }
 
 export function broadcastPodcastRow(payload: { index: number; row: PodcastInfoRow }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('podcasts:resolveRow', payload)
-  }
+  sendMain('podcasts:resolveRow', payload)
 }
 
 export function broadcastPodcastResolveDone(payload: {
@@ -63,7 +61,5 @@ export function broadcastPodcastResolveDone(payload: {
   rows?: PodcastInfoRow[]
   error?: string
 }): void {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    state.mainWindow.webContents.send('podcasts:resolveDone', payload)
-  }
+  sendMain('podcasts:resolveDone', payload)
 }

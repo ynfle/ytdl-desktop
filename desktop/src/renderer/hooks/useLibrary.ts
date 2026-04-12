@@ -189,6 +189,12 @@ export function useLibrary(
     allowSpotSaveRef.current = false
   }, [])
 
+  /** When Settings / startup updates the chosen data root, drop hydrate gate so the next scan re-loads spot. */
+  useEffect(() => {
+    console.log('[useLibrary] dataDir changed, reset hydrate gate', dataDir || '(empty)')
+    resetHydrate()
+  }, [dataDir, resetHydrate])
+
   return {
     library,
     setLibrary,
