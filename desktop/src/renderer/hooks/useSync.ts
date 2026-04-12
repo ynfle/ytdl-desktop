@@ -50,6 +50,14 @@ export function useSync() {
     setBusy(false)
   }, [appendLog, ytrecCount])
 
+  const runPodcasts = useCallback(async () => {
+    setBusy(true)
+    appendLog('\n[ui] starting podcast sync…\n')
+    const r = await window.ytdl.syncPodcasts()
+    if (!r.ok) appendLog(`[ui] syncPodcasts invoke error: ${r.error}\n`)
+    setBusy(false)
+  }, [appendLog])
+
   return {
     busy,
     log,
@@ -58,6 +66,7 @@ export function useSync() {
     setYtrecCount,
     runChannels,
     runYtrec,
+    runPodcasts,
     logEndRef
   }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChannelInfoRow, LibraryVideo } from '../../../shared/ytdl-api'
+import type { ChannelInfoRow, LibraryVideo, PodcastInfoRow } from '../../../shared/ytdl-api'
 
 /* ── Helpers ── */
 
@@ -14,6 +14,11 @@ function parseLibraryRelPath(relPath: string): {
   // New layout: videos/rec/<channel>/file
   if (parts.length >= 4 && parts[0] === 'videos' && parts[1] === 'rec') {
     return { groupKey: `rec/${parts[2]!}`, channelFolder: parts[2]!, fileName }
+  }
+  // Podcast episodes: videos/podcasts/<folderId>/file.ext
+  if (parts.length >= 4 && parts[0] === 'videos' && parts[1] === 'podcasts') {
+    const folderId = parts[2]!
+    return { groupKey: `podcast/${folderId}`, channelFolder: folderId, fileName }
   }
   // New layout: videos/<uploader>/file
   if (parts.length >= 3 && parts[0] === 'videos' && parts[1] !== 'rec') {
@@ -66,6 +71,14 @@ function channelRowForFolder(
   return undefined
 }
 
+/** Match on-disk podcast folder id to a podcasts.txt row. */
+function podcastRowForFolder(
+  rows: PodcastInfoRow[],
+  folderId: string
+): PodcastInfoRow | undefined {
+  return rows.find((r) => r.folderId === folderId)
+}
+
 export type LibraryVideoGroup = {
   groupKey: string
   channelFolder: string
@@ -77,7 +90,8 @@ export type LibraryVideoGroup = {
 
 function buildLibraryGroups(
   videos: LibraryVideo[],
-  channelRows: ChannelInfoRow[]
+  channelRows: ChannelInfoRow[],
+  podcastRows: PodcastInfoRow[]
 ): LibraryVideoGroup[] {
   const bucket = new Map<string, LibraryVideo[]>()
   for (const v of videos) {
@@ -91,14 +105,20 @@ function buildLibraryGroups(
     items.sort((a, b) => b.mtimeMs - a.mtimeMs)
     const first = items[0]!
     const { channelFolder } = parseLibraryRelPath(first.relPath)
-    const row = channelRowForFolder(channelRows, channelFolder)
+    const pRow = groupKey.startsWith('podcast/')
+      ? podcastRowForFolder(podcastRows, channelFolder)
+      : undefined
+    const row = pRow ? undefined : channelRowForFolder(channelRows, channelFolder)
     const prettyFolder = channelFolder.replace(/_/g, ' ')
     const title =
       groupKey === '__root__'
         ? 'Library root'
-        : row?.displayName ??
-          (groupKey.startsWith('rec/') ? `ytrec · ${prettyFolder}` : prettyFolder)
-    groups.push({ groupKey, channelFolder, title, logoUrl: row?.logoUrl ?? null, items })
+        : groupKey.startsWith('podcast/')
+          ? (pRow?.displayName ?? `Podcast · ${prettyFolder}`)
+          : row?.displayName ??
+            (groupKey.startsWith('rec/') ? `ytrec · ${prettyFolder}` : prettyFolder)
+    const logoUrl = pRow?.logoUrl ?? row?.logoUrl ?? null
+    groups.push({ groupKey, channelFolder, title, logoUrl, items })
   }
   groups.sort((a, b) => {
     const newest = (g: LibraryVideoGroup): number =>
@@ -110,11 +130,12 @@ function buildLibraryGroups(
 
 /* ── Hook ── */
 
-/** Library scan, video grouping, and helpers. Depends on channelRows for display enrichment. */
+/** Library scan, media grouping, and helpers. Enriched with channel + podcast rows. */
 export function useLibrary(
   appendLog: (chunk: string) => void,
   dataDir: string,
-  channelRows: ChannelInfoRow[]
+  channelRows: ChannelInfoRow[],
+  podcastRows: PodcastInfoRow[]
 ) {
   const [library, setLibrary] = useState<LibraryVideo[]>([])
   /** Tracks which data root has been hydrated (one-shot per root). */
@@ -131,7 +152,7 @@ export function useLibrary(
     }
     const videos = r.videos ?? []
     setLibrary(videos)
-    appendLog(`[ui] library: ${videos.length} videos\n`)
+    appendLog(`[ui] library: ${videos.length} media files\n`)
 
     const root = await window.ytdl.getDataDir()
     if (hydratedDataRootRef.current === root) {
@@ -158,8 +179,8 @@ export function useLibrary(
   }, [appendLog])
 
   const libraryGroups = useMemo(
-    () => buildLibraryGroups(library, channelRows),
-    [library, channelRows]
+    () => buildLibraryGroups(library, channelRows, podcastRows),
+    [library, channelRows, podcastRows]
   )
 
   /** Reset hydrate flag when user picks a new data dir. */

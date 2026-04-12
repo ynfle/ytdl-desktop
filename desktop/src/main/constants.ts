@@ -6,6 +6,12 @@ export const CHANNEL_RESOLVE_CONCURRENCY = 4
 
 export const VIDEO_EXT = new Set(['.mp4', '.webm', '.mkv', '.m4v'])
 
+/** Audio extensions yt-dlp may write for RSS/podcast enclosures. */
+export const AUDIO_EXT = new Set(['.m4a', '.mp3', '.opus', '.ogg', '.aac'])
+
+/** Library scan: video + podcast audio files under the data root. */
+export const LIBRARY_MEDIA_EXT = new Set<string>([...VIDEO_EXT, ...AUDIO_EXT])
+
 /** Browser-like headers so CDNs (yt3/ggpht) accept main-process fetches. */
 export const CHANNEL_LOGO_FETCH_HEADERS = {
   'User-Agent':

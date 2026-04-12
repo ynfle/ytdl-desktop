@@ -11,6 +11,7 @@ import {
   pathExists,
   peekImageMime
 } from './channel-logos'
+import { isPathInsidePodcastLogos, podcastLogoFilePath } from './podcast-logos'
 import { LOG } from './constants'
 import { mimeForFile } from './mime-utils'
 
@@ -29,6 +30,13 @@ export function channelLogoLoopbackUrl(identifier: string): string | null {
   if (mediaPort <= 0 || !mediaSecret) return null
   const token = Buffer.from(identifier, 'utf8').toString('base64url')
   return `http://127.0.0.1:${mediaPort}/${mediaSecret}/logo/${token}`
+}
+
+/** Loopback URL for podcast cover art in userData (`podcast-logos/<folderId>.cover`). */
+export function podcastLogoLoopbackUrl(folderId: string): string | null {
+  if (mediaPort <= 0 || !mediaSecret) return null
+  const token = Buffer.from(folderId, 'utf8').toString('base64url')
+  return `http://127.0.0.1:${mediaPort}/${mediaSecret}/podcast-logo/${token}`
 }
 
 /** Only our loopback media port may load in the floating player window. */
@@ -96,6 +104,49 @@ async function handleMediaHttp(req: IncomingMessage, res: ServerResponse): Promi
       console.warn(LOG, 'media request rejected', { url: req.url })
       res.writeHead(403)
       res.end()
+      return
+    }
+
+    /** Podcast cover: GET /secret/podcast-logo/<base64url(folderId)> */
+    if (parts.length === 3 && parts[1] === 'podcast-logo') {
+      let folderId: string
+      try {
+        folderId = Buffer.from(parts[2], 'base64url').toString('utf8')
+      } catch {
+        res.writeHead(400)
+        res.end()
+        return
+      }
+      const full = podcastLogoFilePath(folderId)
+      if (!isPathInsidePodcastLogos(full)) {
+        res.writeHead(403)
+        res.end()
+        return
+      }
+      if (!(await pathExists(full))) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      const st = await fs.stat(full)
+      if (!st.isFile()) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      const mime = await peekImageMime(full)
+      if (req.method === 'HEAD') {
+        res.writeHead(200, { 'Content-Length': String(st.size), 'Content-Type': mime })
+        res.end()
+        return
+      }
+      res.writeHead(200, { 'Content-Length': String(st.size), 'Content-Type': mime })
+      createReadStream(full)
+        .on('error', (err) => {
+          console.warn(LOG, 'podcast cover stream error', err)
+          res.destroy()
+        })
+        .pipe(res)
       return
     }
 

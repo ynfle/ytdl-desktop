@@ -23,6 +23,29 @@ export type ChannelInfoRow = {
   logoUrl: string | null
 }
 
+/** One subscribed podcast (line in podcasts.txt) with metadata from cache / yt-dlp. */
+export type PodcastInfoRow = {
+  /** Canonical feed URL as stored in podcasts.txt. */
+  feedUrl: string
+  /** Stable folder segment under videos/podcasts/<folderId>/ (hash of feed URL). */
+  folderId: string
+  displayName: string | null
+  /** Apple / publisher page when known (optional). */
+  feedPageUrl: string | null
+  error: string | null
+  /** Loopback URL to downloaded cover art in userData, when present. */
+  logoUrl: string | null
+}
+
+/** One hit from the iTunes Search API (podcast entity). */
+export type ApplePodcastSearchResult = {
+  collectionId: number
+  title: string
+  artistName: string | null
+  feedUrl: string
+  artworkUrl: string | null
+}
+
 /** Persisted playback resume + session (one bucket per resolved data dir in userData). */
 export type PlaybackSpotSession = {
   queue: string[]
@@ -78,6 +101,7 @@ export type YtdlApi = {
   mediaUrl: (relPath: string) => Promise<{ ok: boolean; url?: string; error?: string }>
   syncChannels: () => Promise<{ ok: boolean; error?: string }>
   syncYtrec: (count: number) => Promise<{ ok: boolean; error?: string }>
+  syncPodcasts: () => Promise<{ ok: boolean; error?: string }>
   /** Lines from channels.txt (no network). */
   readChannelIdentifiers: () => Promise<{ ok: boolean; identifiers?: string[]; error?: string }>
   /** channels.txt rows merged with disk cache only (no yt-dlp). Use on startup / reload list. */
@@ -107,6 +131,42 @@ export type YtdlApi = {
    * Append normalized identifier to channels.txt after re-validating metadata (cache or re-resolve).
    */
   addChannel: (identifier: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
+  /** iTunes Search API; no yt-dlp. */
+  searchApplePodcasts: (term: string) => Promise<{
+    ok: boolean
+    results?: ApplePodcastSearchResult[]
+    error?: string
+  }>
+  /** Resolve Apple Podcasts link or RSS URL; yt-dlp + optional artwork (e.g. from Apple search hit). */
+  previewPodcast: (
+    raw: string,
+    opts?: { artworkUrl?: string | null }
+  ) => Promise<{
+    ok: boolean
+    feedUrl?: string
+    row?: PodcastInfoRow
+    error?: string
+  }>
+  addPodcast: (feedUrl: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
+  removePodcast: (feedUrl: string) => Promise<{ ok: boolean; error?: string; notFound?: boolean }>
+  readPodcastFeeds: () => Promise<{ ok: boolean; feeds?: string[]; error?: string }>
+  hydratePodcastRowsFromCache: () => Promise<{ ok: boolean; rows?: PodcastInfoRow[]; error?: string }>
+  /**
+   * Refresh podcast metadata via yt-dlp; returns immediately. Rows stream on `onPodcastResolveRow`,
+   * finish on `onPodcastResolveDone`.
+   */
+  resolvePodcastInfo: (opts?: { force?: boolean }) => Promise<{
+    ok: boolean
+    started?: boolean
+    error?: string
+  }>
+  onPodcastResolveProgress: (
+    cb: (p: { index: number; total: number; feedUrl: string }) => void
+  ) => () => void
+  onPodcastResolveRow: (cb: (p: { index: number; row: PodcastInfoRow }) => void) => () => void
+  onPodcastResolveDone: (
+    cb: (p: { ok: boolean; rows?: PodcastInfoRow[]; error?: string }) => void
+  ) => () => void
   openExternalUrl: (url: string) => Promise<{ ok: boolean; error?: string }>
   /** Load resume positions + last session for the current data directory. */
   loadPlaybackSpot: () => Promise<{ ok: boolean; snapshot?: PlaybackSpotSnapshot; error?: string }>

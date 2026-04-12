@@ -16,5 +16,7 @@ export const state = {
   lastFloatingPlayerReportedTime: 0,
   floatingPlayerResumePlaying: false,
   syncRunning: false,
-  channelMetaRunning: false
+  channelMetaRunning: false,
+  /** Bulk podcast metadata resolve (yt-dlp) in progress. */
+  podcastMetaRunning: false
 }

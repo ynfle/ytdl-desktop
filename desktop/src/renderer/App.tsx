@@ -6,6 +6,7 @@ import Sidebar, { type Page } from './components/Sidebar'
 import LibraryPage from './components/Library'
 import ChannelsPage from './components/Channels'
 import DownloadsPage from './components/Downloads'
+import PodcastsPage from './components/Podcasts'
 import Player from './components/Player'
 import QueueDrawer from './components/Queue'
 import SettingsModal from './components/SettingsModal'
@@ -13,6 +14,7 @@ import SettingsModal from './components/SettingsModal'
 import { useSync } from './hooks/useSync'
 import { useChannels } from './hooks/useChannels'
 import { useLibrary } from './hooks/useLibrary'
+import { usePodcasts } from './hooks/usePodcasts'
 import { usePlayback } from './hooks/usePlayback'
 
 /**
@@ -34,7 +36,8 @@ export default function App(): React.ReactElement {
   /* ── Hooks ── */
   const sync = useSync()
   const channels = useChannels(sync.appendLog, dataDir)
-  const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows)
+  const podcasts = usePodcasts(sync.appendLog, dataDir)
+  const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows, podcasts.podcastRows)
   const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef)
 
   /** Shared path after `scanLibrary`: merge resume/session from disk into playback state. */
@@ -141,11 +144,38 @@ export default function App(): React.ReactElement {
             isEmpty={lib.library.length === 0}
           />
         )
+      case 'podcasts':
+        return (
+          <PodcastsPage
+            rows={podcasts.podcastRows}
+            busy={sync.busy}
+            podcastsBusy={podcasts.podcastsBusy}
+            channelsBusy={channels.channelsBusy}
+            progress={podcasts.podcastsProgress}
+            onReload={() => void podcasts.loadPodcastRows()}
+            onFetchMeta={() => void podcasts.refreshPodcastMeta(false)}
+            onRefetchAllMeta={() => void podcasts.refreshPodcastMeta(true)}
+            onOpenUrl={handleOpenUrl}
+            searchResults={podcasts.searchResults}
+            searchLoading={podcasts.searchLoading}
+            searchError={podcasts.searchError}
+            onSearch={(q) => void podcasts.runAppleSearch(q)}
+            addPreview={podcasts.addPreview}
+            addPreviewLoading={podcasts.addPreviewLoading}
+            addConfirmBusy={podcasts.addConfirmBusy}
+            addFormError={podcasts.addFormError}
+            onLookUpPodcast={(raw, opts) => void podcasts.lookUpPodcast(raw, opts)}
+            onCancelAddPreview={podcasts.cancelAddPreview}
+            onConfirmAddPodcast={() => podcasts.confirmAddPodcast()}
+            onRemovePodcast={(url) => void podcasts.removePodcast(url)}
+          />
+        )
       case 'channels':
         return (
           <ChannelsPage
             rows={channels.channelRows}
             busy={sync.busy}
+            podcastsBusy={podcasts.podcastsBusy}
             channelsBusy={channels.channelsBusy}
             progress={channels.channelsProgress}
             onReload={() => void channels.loadChannelIdentifiers()}
@@ -166,11 +196,13 @@ export default function App(): React.ReactElement {
           <DownloadsPage
             busy={sync.busy}
             channelsBusy={channels.channelsBusy}
+            podcastsBusy={podcasts.podcastsBusy}
             log={sync.log}
             ytrecCount={sync.ytrecCount}
             onYtrecCountChange={sync.setYtrecCount}
             onRunChannels={() => void sync.runChannels()}
             onRunYtrec={() => void sync.runYtrec()}
+            onRunPodcasts={() => void sync.runPodcasts()}
           />
         )
     }

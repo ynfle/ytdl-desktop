@@ -140,6 +140,8 @@ function AddChannelBar({
 type Props = {
   rows: ChannelInfoRow[]
   busy: boolean
+  /** Block add / list actions while podcast bulk metadata runs. */
+  podcastsBusy: boolean
   channelsBusy: boolean
   progress: string | null
   onReload: () => void
@@ -159,6 +161,7 @@ type Props = {
 export default function ChannelsPage({
   rows,
   busy,
+  podcastsBusy,
   channelsBusy,
   progress,
   onReload,
@@ -175,9 +178,10 @@ export default function ChannelsPage({
 }: Props) {
   const [addRawInput, setAddRawInput] = useState('')
 
-  const anyBusy = busy || channelsBusy || addPreviewLoading || addConfirmBusy
+  const anyBusy = busy || podcastsBusy || channelsBusy || addPreviewLoading || addConfirmBusy
   /** Block add Look up while sync or bulk resolve (matches main-process gates). */
-  const addInteractionLocked = busy || channelsBusy || addPreviewLoading || addConfirmBusy
+  const addInteractionLocked =
+    busy || podcastsBusy || channelsBusy || addPreviewLoading || addConfirmBusy
 
   /** Progress fraction 0..1 for the bar (parse "3/12" from progress string). */
   const progressFraction = (() => {

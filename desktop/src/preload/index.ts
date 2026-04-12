@@ -4,6 +4,7 @@ import type {
   FloatingPlayerClosedPayload,
   FloatingPlayerOpenPayload,
   FloatingPlayerSyncPayload,
+  PodcastInfoRow,
   YtdlApi
 } from '../../shared/ytdl-api'
 
@@ -18,12 +19,44 @@ const api: YtdlApi = {
   mediaUrl: (relPath: string) => ipcRenderer.invoke('library:mediaUrl', relPath),
   syncChannels: () => ipcRenderer.invoke('sync:channels'),
   syncYtrec: (count: number) => ipcRenderer.invoke('sync:ytrec', count),
+  syncPodcasts: () => ipcRenderer.invoke('sync:podcasts'),
   readChannelIdentifiers: () => ipcRenderer.invoke('channels:readIdentifiers'),
   hydrateChannelRowsFromCache: () => ipcRenderer.invoke('channels:hydrateFromCache'),
   resolveChannelInfo: (opts?: { force?: boolean }) =>
     ipcRenderer.invoke('channels:resolveInfo', opts ?? {}),
   previewChannel: (raw: string) => ipcRenderer.invoke('channels:previewChannel', raw),
   addChannel: (identifier: string) => ipcRenderer.invoke('channels:addChannel', identifier),
+  searchApplePodcasts: (term: string) => ipcRenderer.invoke('podcasts:searchApplePodcasts', term),
+  previewPodcast: (raw: string, opts?: { artworkUrl?: string | null }) =>
+    ipcRenderer.invoke('podcasts:previewPodcast', raw, opts ?? {}),
+  addPodcast: (feedUrl: string) => ipcRenderer.invoke('podcasts:addPodcast', feedUrl),
+  removePodcast: (feedUrl: string) => ipcRenderer.invoke('podcasts:removePodcast', feedUrl),
+  readPodcastFeeds: () => ipcRenderer.invoke('podcasts:readFeeds'),
+  hydratePodcastRowsFromCache: () => ipcRenderer.invoke('podcasts:hydrateFromCache'),
+  resolvePodcastInfo: (opts?: { force?: boolean }) =>
+    ipcRenderer.invoke('podcasts:resolveInfo', opts ?? {}),
+  onPodcastResolveProgress: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      payload: { index: number; total: number; feedUrl: string }
+    ) => cb(payload)
+    ipcRenderer.on('podcasts:resolveProgress', listener)
+    return () => ipcRenderer.removeListener('podcasts:resolveProgress', listener)
+  },
+  onPodcastResolveRow: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, payload: { index: number; row: PodcastInfoRow }) =>
+      cb(payload)
+    ipcRenderer.on('podcasts:resolveRow', listener)
+    return () => ipcRenderer.removeListener('podcasts:resolveRow', listener)
+  },
+  onPodcastResolveDone: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      payload: { ok: boolean; rows?: PodcastInfoRow[]; error?: string }
+    ) => cb(payload)
+    ipcRenderer.on('podcasts:resolveDone', listener)
+    return () => ipcRenderer.removeListener('podcasts:resolveDone', listener)
+  },
   openExternalUrl: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   loadPlaybackSpot: () => ipcRenderer.invoke('playback:loadSpot'),
   patchPlaybackSpot: (patch) => ipcRenderer.invoke('playback:patchSpot', patch),

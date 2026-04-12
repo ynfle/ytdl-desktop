@@ -1,6 +1,6 @@
 import { extname, join, relative, sep } from 'path'
 import { promises as fs } from 'fs'
-import { LOG, VIDEO_EXT } from './constants'
+import { LIBRARY_MEDIA_EXT, LOG } from './constants'
 
 export type AppendChannelResult =
   | { ok: true }
@@ -45,7 +45,7 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
         await walk(full)
       } else if (ent.isFile()) {
         const ext = extname(ent.name).toLowerCase()
-        if (!VIDEO_EXT.has(ext)) continue
+        if (!LIBRARY_MEDIA_EXT.has(ext)) continue
         const st = await fs.stat(full)
         const rel = relative(dataRoot, full)
         out.push({
@@ -76,6 +76,94 @@ export async function readChannelsFile(dataRoot: string): Promise<string[]> {
  * Append one normalized identifier as a new line in channels.txt.
  * Creates the file if needed. Caller must pass an already-normalized identifier.
  */
+const PODCASTS_FILE = 'podcasts.txt' as const
+
+/** Same line rules as channels.txt; returns [] when podcasts.txt is missing. */
+export async function readPodcastsLinesOrEmpty(dataRoot: string): Promise<string[]> {
+  try {
+    return await readPodcastsFile(dataRoot)
+  } catch (e) {
+    if (isEnoent(e)) return []
+    throw e
+  }
+}
+
+export async function readPodcastsFile(dataRoot: string): Promise<string[]> {
+  const p = join(dataRoot, PODCASTS_FILE)
+  const text = await fs.readFile(p, 'utf-8')
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith('#'))
+}
+
+/**
+ * Append one feed URL to podcasts.txt (caller passes canonical https URL).
+ */
+export async function appendPodcastLine(dataRoot: string, feedUrl: string): Promise<AppendChannelResult> {
+  const p = join(dataRoot, PODCASTS_FILE)
+  let existing: string[]
+  try {
+    existing = await readPodcastsFile(dataRoot)
+  } catch (e) {
+    if (!isEnoent(e)) {
+      console.error(LOG, 'appendPodcastLine read failed', e)
+      return { ok: false, error: String(e) }
+    }
+    existing = []
+  }
+  if (existing.includes(feedUrl)) {
+    console.info(LOG, 'appendPodcastLine duplicate skip', feedUrl.slice(0, 60))
+    return { ok: false, duplicate: true }
+  }
+  try {
+    let toWrite = `${feedUrl}\n`
+    try {
+      const prev = await fs.readFile(p, 'utf-8')
+      if (prev.length > 0 && !prev.endsWith('\n')) {
+        toWrite = `\n${toWrite}`
+      }
+    } catch (e) {
+      if (!isEnoent(e)) throw e
+    }
+    await fs.appendFile(p, toWrite, 'utf-8')
+    console.info(LOG, 'appendPodcastLine ok', { dataRoot, feedPreview: feedUrl.slice(0, 48) })
+    return { ok: true }
+  } catch (e) {
+    console.error(LOG, 'appendPodcastLine write failed', e)
+    return { ok: false, error: String(e) }
+  }
+}
+
+/** Remove exact feed URL line from podcasts.txt. */
+export async function removePodcastLine(
+  dataRoot: string,
+  feedUrl: string
+): Promise<{ ok: true } | { ok: false; notFound: true } | { ok: false; error: string }> {
+  const p = join(dataRoot, PODCASTS_FILE)
+  let lines: string[]
+  try {
+    lines = await readPodcastsFile(dataRoot)
+  } catch (e) {
+    if (isEnoent(e)) return { ok: false, notFound: true }
+    console.error(LOG, 'removePodcastLine read failed', e)
+    return { ok: false, error: String(e) }
+  }
+  if (!lines.includes(feedUrl)) {
+    return { ok: false, notFound: true }
+  }
+  const next = lines.filter((l) => l !== feedUrl)
+  try {
+    const body = next.length > 0 ? `${next.join('\n')}\n` : ''
+    await fs.writeFile(p, body, 'utf-8')
+    console.info(LOG, 'removePodcastLine ok', feedUrl.slice(0, 48))
+    return { ok: true }
+  } catch (e) {
+    console.error(LOG, 'removePodcastLine write failed', e)
+    return { ok: false, error: String(e) }
+  }
+}
+
 export async function appendChannelLine(dataRoot: string, identifier: string): Promise<AppendChannelResult> {
   const p = join(dataRoot, 'channels.txt')
   let existing: string[]

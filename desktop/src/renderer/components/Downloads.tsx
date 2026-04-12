@@ -1,28 +1,32 @@
 import { useEffect, useRef } from 'react'
 import { motion } from 'motion/react'
-import { Download, Tv, Loader2, Terminal } from 'lucide-react'
+import { Download, Mic2, Tv, Loader2, Terminal } from 'lucide-react'
 
 type Props = {
   busy: boolean
   channelsBusy: boolean
+  podcastsBusy: boolean
   log: string
   ytrecCount: number
   onYtrecCountChange: (n: number) => void
   onRunChannels: () => void
   onRunYtrec: () => void
+  onRunPodcasts: () => void
 }
 
 /** Downloads page: action cards for channel sync + ytrec, with live log terminal. */
 export default function DownloadsPage({
   busy,
   channelsBusy,
+  podcastsBusy,
   log,
   ytrecCount,
   onYtrecCountChange,
   onRunChannels,
-  onRunYtrec
+  onRunYtrec,
+  onRunPodcasts
 }: Props) {
-  const anyBusy = busy || channelsBusy
+  const anyBusy = busy || channelsBusy || podcastsBusy
   const logRef = useRef<HTMLPreElement>(null)
 
   /** Auto-scroll log to bottom. */
@@ -47,7 +51,7 @@ export default function DownloadsPage({
       </div>
 
       {/* Action cards */}
-      <div className="grid grid-cols-2 gap-3 px-6 py-4 shrink-0">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4 shrink-0">
         {/* Channel download card */}
         <motion.button
           whileHover={{ scale: 1.01 }}
@@ -95,6 +99,24 @@ export default function DownloadsPage({
             <p className="text-sm font-semibold">Download Recommendations</p>
             <p className="text-[11px] text-text-muted mt-0.5">
               Fetch YouTube recommended feed (ytrec)
+            </p>
+          </div>
+        </motion.button>
+
+        <motion.button
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.99 }}
+          disabled={anyBusy}
+          onClick={onRunPodcasts}
+          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
+        >
+          <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
+            <Mic2 size={18} className="text-accent" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Download Podcasts</p>
+            <p className="text-[11px] text-text-muted mt-0.5">
+              Fetch latest episodes from podcasts.txt (RSS, audio)
             </p>
           </div>
         </motion.button>

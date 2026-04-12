@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Library, Radio, Download, Settings } from 'lucide-react'
+import { Library, Mic2, Radio, Download, Settings } from 'lucide-react'
 import { motion } from 'motion/react'
 
-export type Page = 'library' | 'channels' | 'downloads'
+export type Page = 'library' | 'channels' | 'podcasts' | 'downloads'
 
 type Props = {
   activePage: Page
@@ -13,6 +13,7 @@ type Props = {
 const NAV_ITEMS: { id: Page; label: string; icon: typeof Library }[] = [
   { id: 'library', label: 'Library', icon: Library },
   { id: 'channels', label: 'Channels', icon: Radio },
+  { id: 'podcasts', label: 'Podcasts', icon: Mic2 },
   { id: 'downloads', label: 'Downloads', icon: Download }
 ]
 

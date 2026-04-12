@@ -1,7 +1,8 @@
 import { join } from 'path'
 import { promises as fs } from 'fs'
 import { broadcastLibraryStale, broadcastLog } from './broadcast'
-import { readChannelsFile } from './library-scan'
+import { folderIdFromFeedUrl } from './podcast-input'
+import { readChannelsFile, readPodcastsLinesOrEmpty } from './library-scan'
 import { runYtDlp } from './yt-dlp-runner'
 import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
@@ -56,6 +57,48 @@ export async function syncYtrecJob(dataRoot: string, count: number): Promise<voi
     await runSyncYtrecJobInner(dataRoot, count)
   } finally {
     videosWatch.stop()
+  }
+}
+
+/** Podcast RSS: latest episodes as audio via yt-dlp (separate archive from YouTube). */
+export async function syncPodcastsJob(dataRoot: string): Promise<void> {
+  const videosWatch = startVideosLibraryWatch(dataRoot, {
+    onTick: () => broadcastLibraryStale({ reason: 'watch' })
+  })
+  try {
+    await runSyncPodcastsJobInner(dataRoot)
+  } finally {
+    videosWatch.stop()
+  }
+}
+
+async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
+  const lines = await readPodcastsLinesOrEmpty(dataRoot)
+  broadcastLog(`[ytdl] podcasts.txt: ${lines.length} feeds\n`)
+  for (const feedUrl of lines) {
+    const folderId = folderIdFromFeedUrl(feedUrl)
+    const outDir = join(dataRoot, 'videos', 'podcasts', folderId)
+    await fs.mkdir(outDir, { recursive: true })
+    const args = [
+      '--playlist-items',
+      '1-10',
+      '--download-archive',
+      'podcast-downloaded.txt',
+      '--ignore-errors',
+      '--remote-components',
+      'ejs:github',
+      '-f',
+      'bestaudio/best',
+      '-o',
+      `videos/podcasts/${folderId}/%(title)s.%(ext)s`,
+      '--restrict-filenames',
+      feedUrl
+    ]
+    broadcastLog(`\n[ytdl] === podcast ${feedUrl.slice(0, 72)}… ===\n`)
+    const { code } = await runYtDlp(args, dataRoot)
+    if (code !== 0) {
+      broadcastLog(`[ytdl] warning: exit code ${code} for podcast feed\n`)
+    }
   }
 }
 

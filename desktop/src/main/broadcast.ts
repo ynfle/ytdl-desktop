@@ -1,4 +1,4 @@
-import type { ChannelInfoRow } from '../../shared/ytdl-api'
+import type { ChannelInfoRow, PodcastInfoRow } from '../../shared/ytdl-api'
 import { state } from './app-state'
 
 export function broadcastLog(chunk: string): void {
@@ -39,5 +39,31 @@ export function broadcastChannelResolveDone(payload: {
 }): void {
   if (state.mainWindow && !state.mainWindow.isDestroyed()) {
     state.mainWindow.webContents.send('channels:resolveDone', payload)
+  }
+}
+
+export function broadcastPodcastProgress(payload: {
+  index: number
+  total: number
+  feedUrl: string
+}): void {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    state.mainWindow.webContents.send('podcasts:resolveProgress', payload)
+  }
+}
+
+export function broadcastPodcastRow(payload: { index: number; row: PodcastInfoRow }): void {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    state.mainWindow.webContents.send('podcasts:resolveRow', payload)
+  }
+}
+
+export function broadcastPodcastResolveDone(payload: {
+  ok: boolean
+  rows?: PodcastInfoRow[]
+  error?: string
+}): void {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    state.mainWindow.webContents.send('podcasts:resolveDone', payload)
   }
 }

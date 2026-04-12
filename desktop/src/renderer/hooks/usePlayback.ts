@@ -121,6 +121,12 @@ export function usePlayback(
    * usual "close floating player on track change" effect so the window is not torn down twice.
    */
   const pendingFloatingReopenRef = useRef(false)
+  /**
+   * Monotonic id for each {@link playRel} load. Stale `loadedmetadata` handlers from an
+   * earlier in-flight `playRel` (user switched files before the prior load finished) must
+   * not seek or call `play()` — they would apply the previous file's resume to the new src.
+   */
+  const playRelGenerationRef = useRef(0)
   useEffect(() => {
     floatingPlayerActiveRef.current = floatingPlayerActive
   }, [floatingPlayerActive])
@@ -188,9 +194,19 @@ export function usePlayback(
       console.log(`[usePlayback] playing: ${relPath}`, { resumeSec: resume ?? null })
       setCurrentRel(relPath)
       if (v) {
+        playRelGenerationRef.current += 1
+        const loadGen = playRelGenerationRef.current
         v.src = r.url
         const onMeta = (): void => {
           v.removeEventListener('loadedmetadata', onMeta)
+          if (loadGen !== playRelGenerationRef.current) {
+            console.info('[usePlayback] ignoring stale loadedmetadata after newer playRel', {
+              relPath,
+              loadGen,
+              currentGen: playRelGenerationRef.current
+            })
+            return
+          }
           const dur = v.duration
           if (resume != null && dur > 0 && !Number.isNaN(dur) && resume < dur * RESUME_MAX_FRACTION) {
             v.currentTime = Math.min(resume, dur * 0.999)
@@ -434,15 +450,25 @@ export function usePlayback(
     const v = videoRef.current
     if (!v) return
     let cancelled = false
+    /** Same idea as {@link playRelGenerationRef}: overlapping preview loads must not seek wrong file. */
+    const previewGen = ++playRelGenerationRef.current
     void (async () => {
       const r = await window.ytdl.mediaUrl(currentRel)
       if (cancelled || currentRelRef.current !== currentRel) return
+      if (previewGen !== playRelGenerationRef.current) {
+        console.info('[usePlayback] preview mediaUrl: superseded by newer load', { currentRel, previewGen })
+        return
+      }
       if (!r.ok || !r.url) return
       v.src = r.url
       const resume = positionsRef.current[currentRel]
       const onMeta = (): void => {
         v.removeEventListener('loadedmetadata', onMeta)
         if (cancelled || currentRelRef.current !== currentRel) return
+        if (previewGen !== playRelGenerationRef.current) {
+          console.info('[usePlayback] ignoring stale preview loadedmetadata', { currentRel, previewGen })
+          return
+        }
         const dur = v.duration
         if (resume != null && dur > 0 && !Number.isNaN(dur) && resume < dur * RESUME_MAX_FRACTION) {
           v.currentTime = Math.min(resume, dur * 0.999)

@@ -2,7 +2,7 @@ import { basename, extname, join } from 'path'
 import { watch, type FSWatcher } from 'fs'
 import { mkdir } from 'fs/promises'
 
-import { LOG, VIDEO_EXT } from './constants'
+import { LIBRARY_MEDIA_EXT, LOG } from './constants'
 
 /** Coalesce bursts of fs events (merge + rename) into one library rescan. */
 const DEBOUNCE_MS = 550
@@ -58,7 +58,7 @@ export function startVideosLibraryWatch(
       return
     }
     const ext = extname(base).toLowerCase()
-    if (ext && !VIDEO_EXT.has(ext)) {
+    if (ext && !LIBRARY_MEDIA_EXT.has(ext)) {
       return
     }
     rawEventsSinceLog++
