@@ -8,7 +8,11 @@ import {
 } from 'electron'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
-import type { FloatingPlayerOpenPayload, FloatingPlayerSyncPayload } from '../../shared/ytdl-api'
+import type {
+  FloatingPlayerControlPayload,
+  FloatingPlayerOpenPayload,
+  FloatingPlayerSyncPayload
+} from '../../shared/ytdl-api'
 import { state } from './app-state'
 import { LOG } from './constants'
 import { getMediaAuth, isAllowedFloatingMediaUrl } from './media-server'
@@ -96,6 +100,8 @@ async function handleOpenFloatingPlayer(
       return { ok: false as const, error: 'url not allowed (expected loopback media server URL)' }
     }
     if (state.floatingPlayerWindow && !state.floatingPlayerWindow.isDestroyed()) {
+      state.floatingPlayerCloseReason = 'replace'
+      state.floatingPlayerSkipNextClosedNotify = true
       state.floatingPlayerWindow.close()
       state.floatingPlayerWindow = null
     }
@@ -122,12 +128,24 @@ async function handleOpenFloatingPlayer(
     })
 
     state.floatingPlayerWindow.on('closed', () => {
-      console.info(LOG, 'floating player closed', { reason: state.floatingPlayerCloseReason })
+      const reason = state.floatingPlayerCloseReason
+      const skipNotify = state.floatingPlayerSkipNextClosedNotify
+      if (skipNotify) state.floatingPlayerSkipNextClosedNotify = false
+      console.info(LOG, 'floating player closed', { reason, skipNotify })
       state.floatingPlayerWindow = null
+      if (skipNotify) {
+        state.floatingPlayerCloseReason = 'user'
+        return
+      }
       const wc = state.mainWindow?.webContents
-      if (!wc || wc.isDestroyed()) return
-      if (state.floatingPlayerCloseReason === 'ended') {
+      if (!wc || wc.isDestroyed()) {
+        state.floatingPlayerCloseReason = 'user'
+        return
+      }
+      if (reason === 'ended') {
         wc.send('playback:floatingPlayerEnded')
+      } else if (reason === 'replace') {
+        /* Should not happen without skipNotify; no renderer notify */
       } else {
         wc.send('playback:floatingPlayerClosed', {
           currentTime: state.lastFloatingPlayerReportedTime,
@@ -155,6 +173,40 @@ async function handleOpenFloatingPlayer(
     console.error(LOG, 'playback:openFloatingPlayer', e)
     state.floatingPlayerWindow?.destroy()
     state.floatingPlayerWindow = null
+    return { ok: false as const, error: String(e) }
+  }
+}
+
+function isFloatingControlPayload(raw: unknown): raw is FloatingPlayerControlPayload {
+  if (!raw || typeof raw !== 'object') return false
+  const a = (raw as { action?: string }).action
+  if (a === 'play' || a === 'pause' || a === 'togglePlay') return true
+  if (a === 'seek') {
+    const t = (raw as { currentTime?: unknown }).currentTime
+    return typeof t === 'number' && Number.isFinite(t)
+  }
+  return false
+}
+
+async function handleControlFloatingPlayer(
+  _event: IpcMainInvokeEvent,
+  raw: unknown
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const win = state.floatingPlayerWindow
+  if (!win || win.isDestroyed()) {
+    console.info(LOG, 'playback:controlFloatingPlayer: no floating window')
+    return { ok: false as const, error: 'no floating player' }
+  }
+  if (!isFloatingControlPayload(raw)) {
+    console.warn(LOG, 'playback:controlFloatingPlayer: invalid payload', raw)
+    return { ok: false as const, error: 'invalid payload' }
+  }
+  try {
+    win.webContents.send('floating-player:control', raw)
+    console.debug(LOG, 'playback:controlFloatingPlayer → child', raw)
+    return { ok: true as const }
+  } catch (e) {
+    console.error(LOG, 'playback:controlFloatingPlayer', e)
     return { ok: false as const, error: String(e) }
   }
 }
@@ -205,8 +257,12 @@ export function registerFloatingPlayerIpc(): void {
   try {
     ipcMain.handle('playback:openFloatingPlayer', handleOpenFloatingPlayer)
     ipcMain.handle('playback:closeFloatingPlayer', handleCloseFloatingPlayer)
+    ipcMain.handle('playback:controlFloatingPlayer', handleControlFloatingPlayer)
     floatingPlayerIpcInstalled = true
-    console.info(LOG, 'registered playback:openFloatingPlayer / closeFloatingPlayer IPC on ipcMain')
+    console.info(
+      LOG,
+      'registered playback:openFloatingPlayer / closeFloatingPlayer / controlFloatingPlayer IPC on ipcMain'
+    )
   } catch (e) {
     console.error(LOG, 'ipcMain.handle (floating player) failed', e)
     throw e
@@ -219,8 +275,10 @@ function bindFloatingInvokeOnTarget(target: IpcBindTarget, label: string): void 
   try {
     target.removeHandler('playback:openFloatingPlayer')
     target.removeHandler('playback:closeFloatingPlayer')
+    target.removeHandler('playback:controlFloatingPlayer')
     target.handle('playback:openFloatingPlayer', handleOpenFloatingPlayer)
     target.handle('playback:closeFloatingPlayer', handleCloseFloatingPlayer)
+    target.handle('playback:controlFloatingPlayer', handleControlFloatingPlayer)
     console.info(LOG, 'floating-player invoke bound on', label)
   } catch (e) {
     console.error(LOG, 'floating-player bind failed on', label, e)

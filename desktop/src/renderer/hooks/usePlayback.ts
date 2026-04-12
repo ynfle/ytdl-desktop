@@ -113,6 +113,8 @@ export function usePlayback(
   const floatingPlayerActiveRef = useRef(false)
   /** Live timeline from floating `<video>` (main element stays paused at handoff time). */
   const [floatingSync, setFloatingSync] = useState<FloatingPlayerSyncPayload | null>(null)
+  /** Latest sync for skip-next resume flush (refs avoid stale closures in callbacks). */
+  const floatingSyncRef = useRef<FloatingPlayerSyncPayload | null>(null)
   /** When true, ignore `resumePlaying` from the floating window (e.g. main Stop cleared playback). */
   const suppressFloatingResumeRef = useRef(false)
   /**
@@ -130,6 +132,10 @@ export function usePlayback(
   useEffect(() => {
     floatingPlayerActiveRef.current = floatingPlayerActive
   }, [floatingPlayerActive])
+
+  useEffect(() => {
+    floatingSyncRef.current = floatingSync
+  }, [floatingSync])
 
   /* Keep refs in sync */
   useEffect(() => { playlistRef.current = playlist }, [playlist])
@@ -721,14 +727,54 @@ export function usePlayback(
     }
   }, [flushPositionNow, allowSpotSaveRef, syncRestoreDocumentPip])
 
+  /** Main transport bar → floating PiP `<video>` (seek / play toggle). */
+  const floatingSeek = useCallback((t: number) => {
+    if (!floatingPlayerActiveRef.current) {
+      console.log('[usePlayback] floatingSeek ignored (floating PiP not active)')
+      return
+    }
+    void window.ytdl.controlFloatingPlayer({ action: 'seek', currentTime: t }).then((r) => {
+      if (!r.ok) console.warn('[usePlayback] controlFloatingPlayer seek', r.error)
+    })
+    setFloatingSync((prev) => (prev ? { ...prev, currentTime: t } : prev))
+    console.log('[usePlayback] floatingSeek', { t })
+  }, [])
+
+  const floatingTogglePlay = useCallback(() => {
+    if (!floatingPlayerActiveRef.current) {
+      console.log('[usePlayback] floatingTogglePlay ignored (floating PiP not active)')
+      return
+    }
+    void window.ytdl.controlFloatingPlayer({ action: 'togglePlay' }).then((r) => {
+      if (!r.ok) console.warn('[usePlayback] controlFloatingPlayer togglePlay', r.error)
+    })
+    setFloatingSync((prev) => (prev ? { ...prev, playing: !prev.playing } : prev))
+    console.log('[usePlayback] floatingTogglePlay (optimistic toggle until sync)')
+  }, [])
+
   /** Skip to next track in playlist. */
   const skipNext = useCallback(() => {
     const pl = playlistRef.current
     const i = cursorRef.current
-    if (i + 1 < pl.length) {
-      setCursor(i + 1)
+    if (i + 1 >= pl.length) return
+
+    if (floatingPlayerActiveRef.current && shouldUseNativePictureInPictureOnly()) {
+      const rel = currentRelRef.current
+      const sync = floatingSyncRef.current
+      if (rel && sync && allowSpotSaveRef.current) {
+        const dur = sync.duration
+        if (dur > 0 && !Number.isNaN(dur) && sync.currentTime >= dur * RESUME_MAX_FRACTION) {
+          delete positionsRef.current[rel]
+          void window.ytdl.patchPlaybackSpot({ positionUpdates: { [rel]: null } })
+        } else if (sync.currentTime >= 0.5) {
+          flushPositionNow(rel, sync.currentTime)
+        }
+      }
+      pendingFloatingReopenRef.current = true
+      console.log('[usePlayback] skipNext: floating PiP handoff → next track (pending reopen)')
     }
-  }, [])
+    setCursor(i + 1)
+  }, [flushPositionNow, allowSpotSaveRef])
 
   /** Tear down floating player when the main window switches to another file (not auto-advance from PiP). */
   useEffect(() => {
@@ -1004,6 +1050,8 @@ export function usePlayback(
     enterPip,
     stopPlayback,
     skipNext,
+    floatingSeek,
+    floatingTogglePlay,
     documentPipActive,
     floatingPlayerActive,
     floatingSync,

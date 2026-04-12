@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { FloatingPlayerOpenPayload, FloatingPlayerSyncPayload } from '../../shared/ytdl-api'
+import type {
+  FloatingPlayerControlPayload,
+  FloatingPlayerOpenPayload,
+  FloatingPlayerSyncPayload
+} from '../../shared/ytdl-api'
 
 /**
  * Minimal bridge for the floating-player.html window only (separate preload bundle).
@@ -9,6 +13,12 @@ contextBridge.exposeInMainWorld('floatingPlayer', {
     ipcRenderer.once('floating-player:init', (_e, p: FloatingPlayerOpenPayload) => {
       cb(p)
     })
+  },
+  /** Main window transport bar → floating `<video>` (seek / play / pause). */
+  onControl: (cb: (p: FloatingPlayerControlPayload) => void): (() => void) => {
+    const listener = (_: Electron.IpcRendererEvent, p: FloatingPlayerControlPayload): void => cb(p)
+    ipcRenderer.on('floating-player:control', listener)
+    return () => ipcRenderer.removeListener('floating-player:control', listener)
   },
   /** Throttled playback progress → main window transport + disk resume. */
   syncProgress: (p: FloatingPlayerSyncPayload): void => {

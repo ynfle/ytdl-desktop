@@ -70,8 +70,13 @@ export type PlayerProps = {
   onVideoPauseOrSeeked: () => void
   /** True while video is in a Document PiP window (collapse aside like native PiP). */
   documentPipActive: boolean
+  /** Electron floating PiP window is open (timeline may lag until first `floatingSync`). */
+  floatingPlayerActive: boolean
   /** Electron floating PiP: timeline + play state (main `<video>` is paused; avoid driving it from the bar). */
   floatingSync: FloatingPlayerSyncPayload | null
+  /** Route transport to floating `<video>` via IPC. */
+  onFloatingSeek: (t: number) => void
+  onFloatingTogglePlay: () => void
 }
 
 /** Format seconds to mm:ss or hh:mm:ss. */
@@ -102,7 +107,10 @@ function usePlayerChrome({
   onVideoTimeUpdate,
   onVideoPauseOrSeeked,
   documentPipActive,
-  floatingSync
+  floatingPlayerActive,
+  floatingSync,
+  onFloatingSeek,
+  onFloatingTogglePlay
 }: PlayerProps): {
   videoPane: React.ReactElement
   transportBar: React.ReactElement
@@ -115,18 +123,20 @@ function usePlayerChrome({
 
   const { showInlineVideo, collapseVideoAside } = useInlineVideoPip(videoRef, currentRel, documentPipActive)
   const fileName = currentRel ? parseLibraryRelPath(currentRel).fileName : null
+  /** Electron floating PiP: transport drives child window, not the paused main `<video>`. */
+  const remoteFloatingTransport = Boolean(floatingPlayerActive || floatingSync)
 
   const handleTimeUpdate = useCallback(() => {
     onVideoTimeUpdate()
     const v = videoRef.current
     // Floating PiP owns playback; main element stays paused — ignore its frozen clock for the bar.
-    if (floatingSync) return
+    if (remoteFloatingTransport) return
     if (v && !seekRef.current) {
       setCurrentTime(v.currentTime)
       setDuration(v.duration || 0)
       setIsPaused(v.paused)
     }
-  }, [videoRef, onVideoTimeUpdate, floatingSync])
+  }, [videoRef, onVideoTimeUpdate, remoteFloatingTransport])
 
   const handlePause = useCallback(() => {
     onVideoPauseOrSeeked()
@@ -149,20 +159,24 @@ function usePlayerChrome({
 
   const onScrub = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (floatingSync) return
+      const t = Number(e.target.value)
+      if (remoteFloatingTransport) {
+        onFloatingSeek(t)
+        return
+      }
       const v = videoRef.current
       if (!v) return
       seekRef.current = true
-      const t = Number(e.target.value)
       v.currentTime = t
       setCurrentTime(t)
     },
-    [videoRef, floatingSync]
+    [videoRef, remoteFloatingTransport, onFloatingSeek]
   )
 
   const togglePlayPause = useCallback(() => {
-    if (floatingSync) {
-      console.log('[Player] play/pause ignored — use Picture-in-Picture window controls')
+    if (remoteFloatingTransport) {
+      onFloatingTogglePlay()
+      console.log('[Player] play/pause → floating PiP via IPC')
       return
     }
     const v = videoRef.current
@@ -175,7 +189,7 @@ function usePlayerChrome({
     } else {
       v.pause()
     }
-  }, [videoRef, currentRel, onPlay, floatingSync])
+  }, [videoRef, currentRel, onPlay, remoteFloatingTransport, onFloatingTogglePlay])
 
   /** While `floatingSync` is set, the transport reflects the child window, not the paused main `<video>`. */
   const barDuration =
@@ -226,15 +240,8 @@ function usePlayerChrome({
       <div className="flex shrink-0 items-center gap-1">
         <button
           onClick={togglePlayPause}
-          disabled={Boolean(floatingSync)}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-bg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-          title={
-            floatingSync
-              ? 'Play/Pause from Picture-in-Picture window'
-              : barPaused
-                ? 'Play'
-                : 'Pause'
-          }
+          title={barPaused ? 'Play' : 'Pause'}
         >
           {barPaused ? <Play size={16} className="ml-0.5" /> : <Pause size={16} />}
         </button>
@@ -269,8 +276,6 @@ function usePlayerChrome({
             step={0.1}
             value={barTime}
             onChange={onScrub}
-            disabled={Boolean(floatingSync)}
-            title={floatingSync ? 'Seek from Picture-in-Picture window' : undefined}
             className="h-1 flex-1 disabled:cursor-not-allowed disabled:opacity-60"
             style={{
               background: `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-border-bright) ${pct}%)`

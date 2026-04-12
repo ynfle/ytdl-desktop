@@ -12,7 +12,9 @@ export const state = {
   config: { dataDir: null } as AppConfig,
   mainWindow: null as BrowserWindow | null,
   floatingPlayerWindow: null as BrowserWindow | null,
-  floatingPlayerCloseReason: 'user' as 'user' | 'ended',
+  /** Next `closed` event should not emit `playback:floatingPlayerClosed` (programmatic replace for next track). */
+  floatingPlayerSkipNextClosedNotify: false,
+  floatingPlayerCloseReason: 'user' as 'user' | 'ended' | 'replace',
   lastFloatingPlayerReportedTime: 0,
   floatingPlayerResumePlaying: false,
   syncRunning: false,

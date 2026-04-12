@@ -92,6 +92,13 @@ export type FloatingPlayerSyncPayload = {
   playing: boolean
 }
 
+/** Main window → floating window: drive the PiP `<video>` (main element stays paused). */
+export type FloatingPlayerControlPayload =
+  | { action: 'seek'; currentTime: number }
+  | { action: 'play' }
+  | { action: 'pause' }
+  | { action: 'togglePlay' }
+
 /** Preload API exposed as `window.ytdl`. */
 export type YtdlApi = {
   getDataDir: () => Promise<string>
@@ -192,6 +199,8 @@ export type YtdlApi = {
    */
   openFloatingPlayer: (payload: FloatingPlayerOpenPayload) => Promise<{ ok: boolean; error?: string }>
   closeFloatingPlayer: () => Promise<void>
+  /** Forward play/pause/seek to the floating PiP `<video>` (no-op if no window). */
+  controlFloatingPlayer: (payload: FloatingPlayerControlPayload) => Promise<{ ok: boolean; error?: string }>
   onFloatingPlayerClosed: (cb: (p: FloatingPlayerClosedPayload) => void) => () => void
   onFloatingPlayerEnded: (cb: () => void) => () => void
   onFloatingPlayerError: (cb: (p: { message: string }) => void) => () => void

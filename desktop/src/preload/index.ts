@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   ChannelInfoRow,
   FloatingPlayerClosedPayload,
+  FloatingPlayerControlPayload,
   FloatingPlayerOpenPayload,
   FloatingPlayerSyncPayload,
   PodcastInfoRow,
@@ -102,6 +103,8 @@ const api: YtdlApi = {
   openFloatingPlayer: (payload: FloatingPlayerOpenPayload) =>
     ipcRenderer.invoke('playback:openFloatingPlayer', payload),
   closeFloatingPlayer: () => ipcRenderer.invoke('playback:closeFloatingPlayer'),
+  controlFloatingPlayer: (payload: FloatingPlayerControlPayload) =>
+    ipcRenderer.invoke('playback:controlFloatingPlayer', payload),
   onFloatingPlayerClosed: (cb: (p: FloatingPlayerClosedPayload) => void) => {
     const listener = (_: Electron.IpcRendererEvent, p: FloatingPlayerClosedPayload) => cb(p)
     ipcRenderer.on('playback:floatingPlayerClosed', listener)

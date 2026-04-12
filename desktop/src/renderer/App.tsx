@@ -233,7 +233,10 @@ export default function App(): React.ReactElement {
         onVideoTimeUpdate={playback.onVideoTimeUpdate}
         onVideoPauseOrSeeked={playback.onVideoPauseOrSeeked}
         documentPipActive={playback.documentPipActive || playback.floatingPlayerActive}
+        floatingPlayerActive={playback.floatingPlayerActive}
         floatingSync={playback.floatingSync}
+        onFloatingSeek={playback.floatingSeek}
+        onFloatingTogglePlay={playback.floatingTogglePlay}
       >
         <div className="flex-1 min-h-0 overflow-hidden relative">
           <AnimatePresence mode="wait">

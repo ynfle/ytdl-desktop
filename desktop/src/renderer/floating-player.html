@@ -92,6 +92,40 @@
           })
         }
 
+        /** Main window transport bar → this window (Electron IPC). */
+        window.floatingPlayer.onControl(function (cmd) {
+          console.log('[floating-player] IPC control', cmd)
+          if (cmd.action === 'seek') {
+            var d = v.duration
+            var t = cmd.currentTime
+            if (d > 0 && !isNaN(d)) t = Math.max(0, Math.min(d, t))
+            else t = Math.max(0, t)
+            v.currentTime = t
+            updatePlayLabel()
+            sendProgressSync(true)
+            return
+          }
+          if (cmd.action === 'play') {
+            void v.play().catch(function (e) {
+              console.warn('[floating-player] IPC play', e)
+            })
+            updatePlayLabel()
+            sendProgressSync(true)
+            return
+          }
+          if (cmd.action === 'pause') {
+            v.pause()
+            updatePlayLabel()
+            sendProgressSync(true)
+            return
+          }
+          if (cmd.action === 'togglePlay') {
+            void (v.paused ? v.play() : v.pause())
+            updatePlayLabel()
+            sendProgressSync(true)
+          }
+        })
+
         window.floatingPlayer.onInit(function (p) {
           console.log('[floating-player] init', { urlLen: p.url?.length, t: p.currentTime, playing: p.playing })
           v.src = p.url
