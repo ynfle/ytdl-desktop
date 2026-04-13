@@ -307,14 +307,23 @@ export function usePlayback(
     [appendLog]
   )
 
-  /** When playing flag is on, load the track at cursor. */
+  /**
+   * Path at `cursor` while playing. Depends on the **active rel string**, not `playlist` array identity,
+   * so tail-only queue edits / other `setPlaylist` clones do not re-run {@link playRel} and unmute the main `<video>` under floating PiP.
+   */
+  const activePlaylistRel: string | null =
+    playing && playlist.length > 0 && cursor >= 0 && cursor < playlist.length
+      ? (playlist[cursor] ?? null)
+      : null
+
+  /** Load the track at cursor when the active path changes. */
   useEffect(() => {
-    if (!playing || playlist.length === 0) return
-    if (cursor < 0 || cursor >= playlist.length) return
-    const rel = playlist[cursor]
-    if (!rel) return
-    void playRel(rel)
-  }, [playing, playlist, cursor, playRel])
+    if (!activePlaylistRel) return
+    console.log('[usePlayback] load track at cursor (activePlaylistRel changed)', {
+      rel: activePlaylistRel
+    })
+    void playRel(activePlaylistRel)
+  }, [activePlaylistRel, playRel])
 
   /* ── Position persistence helpers ── */
 

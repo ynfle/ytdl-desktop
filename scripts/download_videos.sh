@@ -18,6 +18,9 @@ if [[ "$1" == "ytrec" ]]; then
         --cookies-from-browser firefox \
         --remote-components ejs:github \
         --playlist-items 1-"$count" \
+        --write-thumbnail \
+        --embed-thumbnail \
+        --convert-thumbnails jpg \
         -t mp4 \
         --download-archive downloaded.txt \
         --ignore-errors \
@@ -41,6 +44,9 @@ while IFS= read -r channel_identifier; do
         --ignore-errors \
         --remote-components ejs:github \
         -f 'bestvideo[height<=720]+bestaudio/best[height<=720]' \
+        --write-thumbnail \
+        --embed-thumbnail \
+        --convert-thumbnails jpg \
         -t mp4 \
         -o "videos/%(uploader)s/%(title)s.%(ext)s" \
         --restrict-filenames \
