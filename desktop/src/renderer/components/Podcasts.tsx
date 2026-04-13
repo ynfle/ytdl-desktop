@@ -255,7 +255,7 @@ export default function PodcastsPage({
                 }
               }}
               disabled={interactionLocked || searchLoading}
-              placeholder="Search podcasts\u2026"
+              placeholder="Search podcasts…"
               className={subPageLookUpInputClass}
             />
             <button
