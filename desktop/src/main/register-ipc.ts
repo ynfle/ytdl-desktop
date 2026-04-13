@@ -4,7 +4,11 @@ import {
   registerShellIpc
 } from './register-config-playback-shell-ipc'
 import { registerChannelsIpc } from './register-channels-ipc'
-import { registerLibraryMediaUrlIpc, registerLibraryScanIpc } from './register-library-ipc'
+import {
+  registerLibraryDeleteMediaIpc,
+  registerLibraryMediaUrlIpc,
+  registerLibraryScanIpc
+} from './register-library-ipc'
 import { registerPodcastsIpc } from './register-podcasts-ipc'
 import { registerSyncChannelsYtrecIpc, registerSyncPodcastsIpc } from './register-sync-ipc'
 
@@ -22,6 +26,7 @@ export function registerAppIpc(): void {
   registerChannelsIpc()
   registerShellIpc()
   registerLibraryMediaUrlIpc()
+  registerLibraryDeleteMediaIpc()
   registerSyncChannelsYtrecIpc()
   registerPodcastsIpc()
   registerSyncPodcastsIpc()

@@ -114,7 +114,7 @@ async function handleOpenFloatingPlayer(
     const floatingHtmlPath = join(__dirname, '../renderer/floating-player.html')
     state.floatingPlayerWindow = new BrowserWindow({
       width: 560,
-      height: 400,
+      height: 428,
       title: 'Picture in picture',
       alwaysOnTop: true,
       autoHideMenuBar: true,
@@ -155,13 +155,15 @@ async function handleOpenFloatingPlayer(
       state.floatingPlayerCloseReason = 'user'
     })
 
-    if (existsSync(floatingHtmlPath)) {
+    // Dev must use the Vite origin first: a leftover `out/renderer/floating-player.html` from an old build
+    // would otherwise win via loadFile and hide in-editor HTML changes (e.g. PiP timeline).
+    if (devBase) {
+      const u = `${devBase.replace(/\/$/, '')}/floating-player.html`
+      console.info(LOG, 'floating player loadURL (dev)', u)
+      await state.floatingPlayerWindow.loadURL(u)
+    } else if (existsSync(floatingHtmlPath)) {
       await state.floatingPlayerWindow.loadFile(floatingHtmlPath)
       console.info(LOG, 'floating player loadFile', floatingHtmlPath)
-    } else if (devBase) {
-      const u = `${devBase.replace(/\/$/, '')}/floating-player.html`
-      console.info(LOG, 'floating player loadURL', u)
-      await state.floatingPlayerWindow.loadURL(u)
     } else {
       throw new Error(`floating-player.html not found at ${floatingHtmlPath}`)
     }

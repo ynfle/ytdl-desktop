@@ -29,15 +29,92 @@
         max-height: 100%;
         object-fit: contain;
       }
+      .controls {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background: #141414;
+        border-top: 1px solid #2a2a2a;
+      }
+      .timeline-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px 4px;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: #9a9a9a;
+      }
+      .timeline-row span.time {
+        flex: 0 0 auto;
+        min-width: 2.75rem;
+        text-align: center;
+      }
+      .timeline-row span.time:first-child {
+        text-align: right;
+      }
+      .timeline-row span.time:last-child {
+        text-align: left;
+      }
+      /* Native range is often nearly invisible on dark Chromium/Electron without explicit track + thumb. */
+      #timeline {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        margin: 0;
+        padding: 0;
+        accent-color: #5b9bd5;
+        cursor: pointer;
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
+      }
+      #timeline::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 3px;
+        background: #3a3a3a;
+      }
+      #timeline::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        margin-top: -4px;
+        border-radius: 50%;
+        background: #e8e8e8;
+        border: 2px solid #5b9bd5;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+      }
+      #timeline::-moz-range-track {
+        height: 6px;
+        border-radius: 3px;
+        background: #3a3a3a;
+        border: none;
+      }
+      #timeline::-moz-range-progress {
+        height: 6px;
+        border-radius: 3px;
+        background: #5b9bd5;
+      }
+      #timeline::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #e8e8e8;
+        border: 2px solid #5b9bd5;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+      }
+      #timeline:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
       .bar {
         flex-shrink: 0;
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        padding: 10px;
-        background: #141414;
-        border-top: 1px solid #2a2a2a;
+        padding: 6px 10px 10px;
       }
       button {
         padding: 8px 14px;
@@ -57,21 +134,123 @@
     <div class="video-wrap">
       <video id="v" playsinline></video>
     </div>
-    <div class="bar">
-      <button type="button" id="bBack" title="Seek back 10 seconds">−10s</button>
-      <button type="button" id="bPlay" title="Play / Pause">Play</button>
-      <button type="button" id="bFwd" title="Seek forward 10 seconds">+10s</button>
-      <button type="button" id="bClose" title="Close">Close</button>
+    <div class="controls">
+      <div class="timeline-row" title="Seek">
+        <span class="time" id="tCur">0:00</span>
+        <input type="range" id="timeline" min="0" max="0" step="any" value="0" disabled />
+        <span class="time" id="tDur">0:00</span>
+      </div>
+      <div class="bar">
+        <button type="button" id="bBack" title="Seek back 10 seconds">−10s</button>
+        <button type="button" id="bPlay" title="Play / Pause">Play</button>
+        <button type="button" id="bFwd" title="Seek forward 10 seconds">+10s</button>
+        <button type="button" id="bClose" title="Close">Close</button>
+      </div>
     </div>
     <script>
       ;(function () {
         const SEEK = 10
         const v = document.getElementById('v')
+        const timeline = document.getElementById('timeline')
+        const tCur = document.getElementById('tCur')
+        const tDur = document.getElementById('tDur')
         const bBack = document.getElementById('bBack')
         const bPlay = document.getElementById('bPlay')
         const bFwd = document.getElementById('bFwd')
         const bClose = document.getElementById('bClose')
-        if (!v || !bBack || !bPlay || !bFwd || !bClose) return
+        if (!v || !timeline || !tCur || !tDur || !bBack || !bPlay || !bFwd || !bClose) return
+
+        /** While true, ignore `timeupdate` for slider position (user is scrubbing). */
+        var scrubbing = false
+
+        function formatTime(sec) {
+          if (!isFinite(sec) || sec < 0) return '0:00'
+          var s = Math.floor(sec % 60)
+          var m = Math.floor((sec / 60) % 60)
+          var h = Math.floor(sec / 3600)
+          var pad = function (n) {
+            return (n < 10 ? '0' : '') + n
+          }
+          if (h > 0) return h + ':' + pad(m) + ':' + pad(s)
+          return m + ':' + pad(s)
+        }
+
+        function durationUsable() {
+          var d = v.duration
+          return d > 0 && isFinite(d)
+        }
+
+        /** Sync timeline labels + range from `<video>` (skipped during scrub). */
+        function refreshTimelineFromVideo() {
+          if (scrubbing) return
+          var d = v.duration
+          var ok = durationUsable()
+          timeline.disabled = !ok
+          if (ok) {
+            timeline.max = String(d)
+            timeline.value = String(Math.min(Math.max(0, v.currentTime), d))
+          } else {
+            timeline.max = '0'
+            timeline.value = '0'
+          }
+          tCur.textContent = formatTime(v.currentTime)
+          tDur.textContent = ok ? formatTime(d) : '—'
+        }
+
+        function beginScrub() {
+          if (scrubbing || !durationUsable()) return
+          scrubbing = true
+          console.log('[floating-player] timeline scrub start', { t: v.currentTime, d: v.duration })
+        }
+
+        function endScrub() {
+          if (!scrubbing) return
+          scrubbing = false
+          refreshTimelineFromVideo()
+          sendProgressSync(true)
+          console.log('[floating-player] timeline scrub end', { t: v.currentTime })
+        }
+
+        timeline.addEventListener('pointerdown', function (e) {
+          if (timeline.disabled) return
+          if (e.pointerType === 'mouse' && e.button !== 0) return
+          beginScrub()
+          if (!scrubbing) return
+          try {
+            timeline.setPointerCapture(e.pointerId)
+          } catch (err) {
+            console.warn('[floating-player] setPointerCapture failed', err)
+          }
+        })
+        timeline.addEventListener('pointerup', function (e) {
+          try {
+            if (timeline.hasPointerCapture(e.pointerId)) {
+              timeline.releasePointerCapture(e.pointerId)
+            }
+          } catch (err) {
+            /* release without capture can throw */
+          }
+          endScrub()
+        })
+        timeline.addEventListener('lostpointercapture', function () {
+          endScrub()
+        })
+        timeline.addEventListener('input', function () {
+          if (!durationUsable()) return
+          var t = parseFloat(timeline.value)
+          if (!isFinite(t)) return
+          v.currentTime = Math.min(Math.max(0, t), v.duration)
+          tCur.textContent = formatTime(v.currentTime)
+        })
+        timeline.addEventListener('change', function () {
+          endScrub()
+        })
+        window.addEventListener('pointercancel', function () {
+          endScrub()
+        })
+        window.addEventListener('pointerup', function () {
+          endScrub()
+        })
 
         function updatePlayLabel() {
           bPlay.textContent = v.paused ? 'Play' : 'Pause'
@@ -101,6 +280,7 @@
             if (d > 0 && !isNaN(d)) t = Math.max(0, Math.min(d, t))
             else t = Math.max(0, t)
             v.currentTime = t
+            refreshTimelineFromVideo()
             updatePlayLabel()
             sendProgressSync(true)
             return
@@ -122,6 +302,7 @@
           if (cmd.action === 'togglePlay') {
             void (v.paused ? v.play() : v.pause())
             updatePlayLabel()
+            refreshTimelineFromVideo()
             sendProgressSync(true)
           }
         })
@@ -140,6 +321,7 @@
             if (p.playing) void v.play().catch((e) => console.warn('[floating-player] play', e))
             else v.pause()
             updatePlayLabel()
+            refreshTimelineFromVideo()
             sendProgressSync(true)
           }
           v.addEventListener('loadedmetadata', onMeta)
@@ -151,21 +333,29 @@
             window.floatingPlayer.ended()
           })
           v.addEventListener('timeupdate', function () {
+            refreshTimelineFromVideo()
             sendProgressSync(false)
           })
           v.addEventListener('seeked', function () {
+            refreshTimelineFromVideo()
             sendProgressSync(true)
+          })
+          v.addEventListener('durationchange', function () {
+            console.log('[floating-player] durationchange', { d: v.duration })
+            refreshTimelineFromVideo()
           })
         })
 
         bBack.onclick = function () {
           v.currentTime = Math.max(0, v.currentTime - SEEK)
+          refreshTimelineFromVideo()
           sendProgressSync(true)
         }
         bFwd.onclick = function () {
           var d = v.duration
           if (d > 0 && !isNaN(d)) v.currentTime = Math.min(d, v.currentTime + SEEK)
           else v.currentTime = v.currentTime + SEEK
+          refreshTimelineFromVideo()
           sendProgressSync(true)
         }
         bPlay.onclick = function () {

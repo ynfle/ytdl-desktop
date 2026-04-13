@@ -106,6 +106,8 @@ export type YtdlApi = {
   pickDataDir: () => Promise<string | null>
   scanLibrary: () => Promise<{ ok: boolean; videos?: LibraryVideo[]; error?: string }>
   mediaUrl: (relPath: string) => Promise<{ ok: boolean; url?: string; error?: string }>
+  /** Remove one library media file under the data root (permanent delete). */
+  deleteLibraryMedia: (relPath: string) => Promise<{ ok: boolean; error?: string }>
   syncChannels: () => Promise<{ ok: boolean; error?: string }>
   syncYtrec: (count: number) => Promise<{ ok: boolean; error?: string }>
   syncPodcasts: () => Promise<{ ok: boolean; error?: string }>

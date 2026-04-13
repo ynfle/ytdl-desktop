@@ -18,6 +18,7 @@ const api: YtdlApi = {
   pickDataDir: () => ipcRenderer.invoke('config:pickDataDir'),
   scanLibrary: () => ipcRenderer.invoke('library:scan'),
   mediaUrl: (relPath: string) => ipcRenderer.invoke('library:mediaUrl', relPath),
+  deleteLibraryMedia: (relPath: string) => ipcRenderer.invoke('library:deleteMedia', relPath),
   syncChannels: () => ipcRenderer.invoke('sync:channels'),
   syncYtrec: (count: number) => ipcRenderer.invoke('sync:ytrec', count),
   syncPodcasts: () => ipcRenderer.invoke('sync:podcasts'),

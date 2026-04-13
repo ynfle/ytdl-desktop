@@ -87,6 +87,8 @@ export function usePlayback(
   const [playlist, setPlaylist] = useState<string[]>([])
   const [cursor, setCursor] = useState(0)
   const [playing, setPlaying] = useState(false)
+  /** Mirrors {@link playing} for delete / IPC handlers that must not capture stale render state. */
+  const playingRef = useRef(false)
   const [currentRel, setCurrentRel] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const playlistRef = useRef<string[]>([])
@@ -141,6 +143,9 @@ export function usePlayback(
   useEffect(() => { playlistRef.current = playlist }, [playlist])
   useEffect(() => { cursorRef.current = cursor }, [cursor])
   useEffect(() => { currentRelRef.current = currentRel }, [currentRel])
+  useEffect(() => {
+    playingRef.current = playing
+  }, [playing])
 
   /** Restore session from a hydrated snapshot (called once per data-root). */
   const restoreFromSnapshot = useCallback(
@@ -152,7 +157,9 @@ export function usePlayback(
         validPaths
       )
       positionsRef.current = Object.fromEntries(
-        Object.entries(snapshot.positions).map(([k, v]) => [k, v.currentTime])
+        Object.entries(snapshot.positions)
+          .filter(([k]) => validPaths.has(k))
+          .map(([k, v]) => [k, v.currentTime])
       )
       setQueue(queueF)
       setPlaylist(pl)
@@ -171,16 +178,22 @@ export function usePlayback(
    * Merge resume times from disk into memory without replacing queue/session.
    * Used after rescans and when the same data root was already hydrated.
    */
-  const mergePositionsFromSnapshot = useCallback((snapshot: PlaybackSpotSnapshot) => {
-    const fromDisk = Object.fromEntries(
-      Object.entries(snapshot.positions).map(([k, v]) => [k, v.currentTime])
-    )
-    positionsRef.current = { ...positionsRef.current, ...fromDisk }
-    console.log('[usePlayback] merged resume positions from disk', {
-      mergedKeys: Object.keys(fromDisk).length,
-      totalKeys: Object.keys(positionsRef.current).length
-    })
-  }, [])
+  const mergePositionsFromSnapshot = useCallback(
+    (snapshot: PlaybackSpotSnapshot, validRelPaths?: Set<string>) => {
+      const fromDisk = Object.fromEntries(
+        Object.entries(snapshot.positions)
+          .filter(([k]) => !validRelPaths || validRelPaths.has(k))
+          .map(([k, v]) => [k, v.currentTime])
+      )
+      positionsRef.current = { ...positionsRef.current, ...fromDisk }
+      console.log('[usePlayback] merged resume positions from disk', {
+        mergedKeys: Object.keys(fromDisk).length,
+        totalKeys: Object.keys(positionsRef.current).length,
+        filtered: Boolean(validRelPaths)
+      })
+    },
+    []
+  )
 
   /** Load and play a specific relPath. */
   const playRel = useCallback(
@@ -727,6 +740,97 @@ export function usePlayback(
     }
   }, [flushPositionNow, allowSpotSaveRef, syncRestoreDocumentPip])
 
+  /**
+   * After the file for `deletedRel` was removed on disk: drop resume entry, prune queue/session,
+   * and keep Electron floating PiP in sync when the deleted row was the active track.
+   */
+  const handleLibraryFileDeleted = useCallback(
+    async (deletedRel: string, remainingRels: Set<string>) => {
+      console.log('[usePlayback] handleLibraryFileDeleted start', {
+        deletedRel,
+        remainingCount: remainingRels.size,
+        playing: playingRef.current,
+        currentRel: currentRelRef.current
+      })
+
+      delete positionsRef.current[deletedRel]
+      if (allowSpotSaveRef.current) {
+        const patch = await window.ytdl.patchPlaybackSpot({
+          positionUpdates: { [deletedRel]: null }
+        })
+        if (!patch.ok) {
+          console.warn('[usePlayback] handleLibraryFileDeleted patchPlaybackSpot failed', patch.error)
+        }
+      }
+
+      setQueue((q) => q.filter((p) => p !== deletedRel))
+
+      const pl = playlistRef.current
+      const cur = cursorRef.current
+      const curRel = currentRelRef.current
+      const isCurrent = curRel === deletedRel
+      const play = playingRef.current
+
+      const { playlist: newPl, cursor: newCur, currentRel: newCr } = reconcilePlaylist(
+        pl,
+        cur,
+        remainingRels
+      )
+
+      const electron = shouldUseNativePictureInPictureOnly()
+      const floatingOn = floatingPlayerActiveRef.current
+
+      if (electron && floatingOn && isCurrent && play) {
+        const sync = floatingSyncRef.current
+        if (curRel && sync && allowSpotSaveRef.current) {
+          const dur = sync.duration
+          if (dur > 0 && !Number.isNaN(dur) && sync.currentTime >= dur * RESUME_MAX_FRACTION) {
+            delete positionsRef.current[curRel]
+            void window.ytdl.patchPlaybackSpot({ positionUpdates: { [curRel]: null } })
+          } else if (sync.currentTime >= 0.5) {
+            flushPositionNow(curRel, sync.currentTime)
+          }
+        }
+        if (newPl.length > 0 && newCr) {
+          pendingFloatingReopenRef.current = true
+          console.log('[usePlayback] handleLibraryFileDeleted: floating PiP handoff to next track')
+        }
+      }
+
+      setPlaylist(newPl)
+      setCursor(newCur)
+
+      if (newPl.length === 0 || !newCr) {
+        console.log('[usePlayback] handleLibraryFileDeleted: playlist exhausted after delete')
+        suppressFloatingResumeRef.current = true
+        pendingFloatingReopenRef.current = false
+        void window.ytdl.closeFloatingPlayer()
+        setFloatingPlayerActive(false)
+        setFloatingSync(null)
+        syncRestoreDocumentPip(true)
+        setPlaying(false)
+        setCurrentRel(null)
+        const v = videoRef.current
+        if (v) {
+          v.pause()
+          v.removeAttribute('src')
+        }
+        return
+      }
+
+      if (!play) {
+        setCurrentRel(newCr)
+        console.log('[usePlayback] handleLibraryFileDeleted: set preview current', newCr)
+      } else {
+        console.log('[usePlayback] handleLibraryFileDeleted: playRel will run via effect', {
+          cursor: newCur,
+          rel: newPl[newCur]
+        })
+      }
+    },
+    [allowSpotSaveRef, flushPositionNow, syncRestoreDocumentPip]
+  )
+
   /** Main transport bar → floating PiP `<video>` (seek / play toggle). */
   const floatingSeek = useCallback((t: number) => {
     if (!floatingPlayerActiveRef.current) {
@@ -1050,6 +1154,7 @@ export function usePlayback(
     enterPip,
     stopPlayback,
     skipNext,
+    handleLibraryFileDeleted,
     floatingSeek,
     floatingTogglePlay,
     documentPipActive,

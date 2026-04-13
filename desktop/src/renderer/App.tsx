@@ -13,7 +13,7 @@ import SettingsModal from './components/SettingsModal'
 
 import { useSync } from './hooks/useSync'
 import { useChannels } from './hooks/useChannels'
-import { useLibrary } from './hooks/useLibrary'
+import { parseLibraryRelPath, useLibrary } from './hooks/useLibrary'
 import { usePodcasts } from './hooks/usePodcasts'
 import { usePlayback } from './hooks/usePlayback'
 
@@ -52,7 +52,7 @@ export default function App(): React.ReactElement {
       if (result.freshHydrate && result.snapshot) {
         playback.restoreFromSnapshot(result.snapshot, valid)
       } else if (result.positionsOnly && result.snapshot) {
-        playback.mergePositionsFromSnapshot(result.snapshot)
+        playback.mergePositionsFromSnapshot(result.snapshot, valid)
       }
     },
     [playback.restoreFromSnapshot, playback.mergePositionsFromSnapshot]
@@ -122,6 +122,39 @@ export default function App(): React.ReactElement {
     applyLibraryScanResult(result)
   }, [lib.refreshLibrary, applyLibraryScanResult])
 
+  /** Permanently remove one media file from disk and prune playback state. */
+  const handleDeleteLibraryItem = useCallback(
+    async (relPath: string) => {
+      const { fileName } = parseLibraryRelPath(relPath)
+      if (
+        !window.confirm(
+          `Permanently delete "${fileName}" from your library? This cannot be undone.`
+        )
+      ) {
+        return
+      }
+      console.log('[App] deleteLibraryMedia', relPath)
+      const del = await window.ytdl.deleteLibraryMedia(relPath)
+      if (!del.ok) {
+        sync.appendLog(`[ui] delete failed: ${del.error ?? 'unknown'}\n`)
+        return
+      }
+      const remainingRels = new Set(
+        lib.library.filter((v) => v.relPath !== relPath).map((v) => v.relPath)
+      )
+      await playback.handleLibraryFileDeleted(relPath, remainingRels)
+      const result = await lib.refreshLibrary()
+      applyLibraryScanResult(result)
+    },
+    [
+      applyLibraryScanResult,
+      lib.library,
+      lib.refreshLibrary,
+      playback.handleLibraryFileDeleted,
+      sync
+    ]
+  )
+
   const handleOpenUrl = useCallback(
     (url: string) => {
       void window.ytdl.openExternalUrl(url).then((o) => {
@@ -141,6 +174,7 @@ export default function App(): React.ReactElement {
             currentRel={playback.currentRel}
             onQueue={playback.addToQueue}
             onPlayFrom={playback.playFromLibraryRel}
+            onDelete={handleDeleteLibraryItem}
             isEmpty={lib.library.length === 0}
           />
         )

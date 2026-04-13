@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { motion } from 'motion/react'
-import { Play, Plus, Film } from 'lucide-react'
+import { Play, Plus, Film, Trash2 } from 'lucide-react'
 import type { LibraryVideoGroup } from '../hooks/useLibrary'
 import { parseLibraryRelPath } from '../hooks/useLibrary'
 
@@ -25,11 +25,20 @@ type Props = {
   currentRel: string | null
   onQueue: (relPath: string) => void
   onPlayFrom: (relPath: string) => void
+  /** Remove file from disk (caller confirms). */
+  onDelete: (relPath: string) => void
   isEmpty: boolean
 }
 
 /** Library page: channel-grouped video cards with click-to-queue and double-click-to-play. */
-export default function LibraryPage({ groups, currentRel, onQueue, onPlayFrom, isEmpty }: Props) {
+export default function LibraryPage({
+  groups,
+  currentRel,
+  onQueue,
+  onPlayFrom,
+  onDelete,
+  isEmpty
+}: Props) {
   /** Total video count badge. */
   const totalVideos = useMemo(() => groups.reduce((n, g) => n + g.items.length, 0), [groups])
 
@@ -124,6 +133,18 @@ export default function LibraryPage({ groups, currentRel, onQueue, onPlayFrom, i
                     <span className="text-[11px] text-text-muted tabular-nums shrink-0">
                       {relativeTime(item.mtimeMs)}
                     </span>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void onDelete(item.relPath)
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-muted hover:text-danger transition-all shrink-0"
+                      title="Delete from library"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </li>
                 )
               })}
