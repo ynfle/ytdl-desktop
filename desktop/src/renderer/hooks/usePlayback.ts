@@ -147,6 +147,21 @@ export function usePlayback(
     playingRef.current = playing
   }, [playing])
 
+  /**
+   * While playing, the drawer queue is always current + upcoming (`playlist.slice(cursor)`).
+   * While not playing, `queue` is staging from library clicks only.
+   */
+  useEffect(() => {
+    if (!playing) return
+    const upcoming = playlist.slice(cursor)
+    setQueue(upcoming)
+    console.log('[usePlayback] queue synced to current+upcoming', {
+      cursor,
+      playlistLen: playlist.length,
+      queueLen: upcoming.length
+    })
+  }, [playing, playlist, cursor])
+
   /** Restore session from a hydrated snapshot (called once per data-root). */
   const restoreFromSnapshot = useCallback(
     (snapshot: PlaybackSpotSnapshot, validPaths: Set<string>) => {
@@ -161,7 +176,16 @@ export function usePlayback(
           .filter(([k]) => validPaths.has(k))
           .map(([k, v]) => [k, v.currentTime])
       )
-      setQueue(queueF)
+      /** Older snapshots could save an empty `queue` while `playlist` + `cursor` still describe resume. */
+      let nextQueue = queueF
+      if (queueF.length === 0 && pl.length > 0 && cur >= 0 && cur < pl.length) {
+        nextQueue = pl.slice(cur)
+        console.log('[usePlayback] restore: empty saved queue — using playlist.slice(cursor) for drawer', {
+          cursor: cur,
+          len: nextQueue.length
+        })
+      }
+      setQueue(nextQueue)
       setPlaylist(pl)
       setCursor(cur)
       setCurrentRel(cr)
@@ -502,11 +526,17 @@ export function usePlayback(
   /* ── Actions ── */
 
   const addToQueue = useCallback((relPath: string) => {
+    if (playingRef.current) {
+      setPlaylist((pl) => {
+        const c = cursorRef.current
+        const upcoming = pl.slice(c)
+        if (upcoming.includes(relPath)) return pl
+        return [...pl, relPath]
+      })
+      console.log('[usePlayback] addToQueue while playing → appended to playlist tail', { relPath })
+      return
+    }
     setQueue((q) => (q.includes(relPath) ? q : [...q, relPath]))
-  }, [])
-
-  const removeFromQueue = useCallback((index: number) => {
-    setQueue((q) => q.filter((_, i) => i !== index))
   }, [])
 
   /** Queue > restored session > full library (newest first). */
@@ -530,7 +560,9 @@ export function usePlayback(
 
   const playFromQueueIndex = useCallback((index: number) => {
     if (index < 0 || index >= queue.length) return
-    setPlaylist(queue.slice(index))
+    const slice = queue.slice(index)
+    setPlaylist(slice)
+    setQueue(slice)
     setCursor(0)
     setPlaying(true)
   }, [queue])
@@ -539,7 +571,9 @@ export function usePlayback(
     (relPath: string) => {
       const idx = library.findIndex((x) => x.relPath === relPath)
       if (idx < 0) return
-      setPlaylist(library.slice(idx).map((x) => x.relPath))
+      const pl = library.slice(idx).map((x) => x.relPath)
+      setPlaylist(pl)
+      setQueue(pl)
       setCursor(0)
       setPlaying(true)
     },
@@ -739,6 +773,47 @@ export function usePlayback(
       videoRef.current.removeAttribute('src')
     }
   }, [flushPositionNow, allowSpotSaveRef, syncRestoreDocumentPip])
+
+  /**
+   * Drawer row index is relative to current+upcoming while playing (`playlist[cursor + index]`).
+   * When not playing, index is into the staging queue only.
+   */
+  const removeFromQueue = useCallback(
+    (index: number) => {
+      if (!playingRef.current) {
+        setQueue((q) => q.filter((_, i) => i !== index))
+        return
+      }
+      const c = cursorRef.current
+      const pl = playlistRef.current
+      const targetIndex = c + index
+      if (targetIndex < 0 || targetIndex >= pl.length) {
+        console.warn('[usePlayback] removeFromQueue: index out of range', {
+          index,
+          cursor: c,
+          plLen: pl.length
+        })
+        return
+      }
+      const nextPl = pl.filter((_, j) => j !== targetIndex)
+      if (nextPl.length === 0) {
+        console.log('[usePlayback] removeFromQueue: playlist exhausted → stop')
+        stopPlayback()
+        setPlaylist([])
+        setQueue([])
+        setCursor(0)
+        return
+      }
+      setPlaylist(nextPl)
+      setCursor((prev) => (targetIndex < prev ? prev - 1 : prev))
+      console.log('[usePlayback] removeFromQueue while playing', {
+        index,
+        targetIndex,
+        nextLen: nextPl.length
+      })
+    },
+    [stopPlayback]
+  )
 
   /**
    * After the file for `deletedRel` was removed on disk: drop resume entry, prune queue/session,
