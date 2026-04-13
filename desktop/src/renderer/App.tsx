@@ -6,6 +6,7 @@ import Sidebar, { type Page } from './components/Sidebar'
 import LibraryPage from './components/Library'
 import ChannelsPage from './components/Channels'
 import DownloadsPage from './components/Downloads'
+import PlaylistsPage from './components/Playlists'
 import PodcastsPage from './components/Podcasts'
 import Player from './components/Player'
 import QueueDrawer from './components/Queue'
@@ -13,6 +14,7 @@ import SettingsModal from './components/SettingsModal'
 
 import { useSync } from './hooks/useSync'
 import { useChannels } from './hooks/useChannels'
+import { usePlaylists } from './hooks/usePlaylists'
 import { parseLibraryRelPath, useLibrary } from './hooks/useLibrary'
 import { usePodcasts } from './hooks/usePodcasts'
 import { usePlayback } from './hooks/usePlayback'
@@ -36,6 +38,7 @@ export default function App(): React.ReactElement {
   /* ── Hooks ── */
   const sync = useSync()
   const channels = useChannels(sync.appendLog, dataDir)
+  const playlists = usePlaylists(sync.appendLog, dataDir)
   const podcasts = usePodcasts(sync.appendLog, dataDir)
   const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows, podcasts.podcastRows)
   const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef)
@@ -178,6 +181,54 @@ export default function App(): React.ReactElement {
             isEmpty={lib.library.length === 0}
           />
         )
+      case 'channels':
+        return (
+          <ChannelsPage
+            rows={channels.channelRows}
+            busy={sync.busy}
+            podcastsBusy={podcasts.podcastsBusy}
+            channelsBusy={channels.channelsBusy}
+            playlistsBusy={playlists.playlistsBusy}
+            playlistAddPreviewLoading={playlists.addPreviewLoading}
+            playlistAddConfirmBusy={playlists.addConfirmBusy}
+            progress={channels.channelsProgress}
+            onReload={() => void channels.loadChannelIdentifiers()}
+            onFetchNames={() => void channels.refreshChannelNames(false)}
+            onRefetchAll={() => void channels.refreshChannelNames(true)}
+            onOpenUrl={handleOpenUrl}
+            addPreview={channels.addPreview}
+            addPreviewLoading={channels.addPreviewLoading}
+            addConfirmBusy={channels.addConfirmBusy}
+            addFormError={channels.addFormError}
+            onLookUpChannel={(raw) => void channels.lookUpChannel(raw)}
+            onCancelAddPreview={channels.cancelAddPreview}
+            onConfirmAddChannel={() => channels.confirmAddChannel()}
+          />
+        )
+      case 'playlists':
+        return (
+          <PlaylistsPage
+            rows={playlists.playlistRows}
+            busy={sync.busy}
+            podcastsBusy={podcasts.podcastsBusy}
+            channelsBusy={channels.channelsBusy}
+            channelsAddPreviewLoading={channels.addPreviewLoading}
+            channelsAddConfirmBusy={channels.addConfirmBusy}
+            playlistsBusy={playlists.playlistsBusy}
+            progress={playlists.playlistsProgress}
+            onReload={() => void playlists.loadPlaylistRows()}
+            onFetchMeta={() => void playlists.refreshPlaylistMeta(false)}
+            onRefetchAllMeta={() => void playlists.refreshPlaylistMeta(true)}
+            onOpenUrl={handleOpenUrl}
+            addPreview={playlists.addPreview}
+            addPreviewLoading={playlists.addPreviewLoading}
+            addConfirmBusy={playlists.addConfirmBusy}
+            addFormError={playlists.addFormError}
+            onLookUpPlaylist={(raw) => void playlists.lookUpPlaylist(raw)}
+            onCancelAddPreview={playlists.cancelAddPreview}
+            onConfirmAddPlaylist={() => playlists.confirmAddPlaylist()}
+          />
+        )
       case 'podcasts':
         return (
           <PodcastsPage
@@ -185,6 +236,11 @@ export default function App(): React.ReactElement {
             busy={sync.busy}
             podcastsBusy={podcasts.podcastsBusy}
             channelsBusy={channels.channelsBusy}
+            channelsAddPreviewLoading={channels.addPreviewLoading}
+            channelsAddConfirmBusy={channels.addConfirmBusy}
+            playlistsBusy={playlists.playlistsBusy}
+            playlistAddPreviewLoading={playlists.addPreviewLoading}
+            playlistAddConfirmBusy={playlists.addConfirmBusy}
             progress={podcasts.podcastsProgress}
             onReload={() => void podcasts.loadPodcastRows()}
             onFetchMeta={() => void podcasts.refreshPodcastMeta(false)}
@@ -204,37 +260,18 @@ export default function App(): React.ReactElement {
             onRemovePodcast={(url) => void podcasts.removePodcast(url)}
           />
         )
-      case 'channels':
-        return (
-          <ChannelsPage
-            rows={channels.channelRows}
-            busy={sync.busy}
-            podcastsBusy={podcasts.podcastsBusy}
-            channelsBusy={channels.channelsBusy}
-            progress={channels.channelsProgress}
-            onReload={() => void channels.loadChannelIdentifiers()}
-            onFetchNames={() => void channels.refreshChannelNames(false)}
-            onRefetchAll={() => void channels.refreshChannelNames(true)}
-            onOpenUrl={handleOpenUrl}
-            addPreview={channels.addPreview}
-            addPreviewLoading={channels.addPreviewLoading}
-            addConfirmBusy={channels.addConfirmBusy}
-            addFormError={channels.addFormError}
-            onLookUpChannel={(raw) => void channels.lookUpChannel(raw)}
-            onCancelAddPreview={channels.cancelAddPreview}
-            onConfirmAddChannel={() => channels.confirmAddChannel()}
-          />
-        )
       case 'downloads':
         return (
           <DownloadsPage
             busy={sync.busy}
             channelsBusy={channels.channelsBusy}
             podcastsBusy={podcasts.podcastsBusy}
+            playlistsBusy={playlists.playlistsBusy}
             log={sync.log}
             ytrecCount={sync.ytrecCount}
             onYtrecCountChange={sync.setYtrecCount}
             onRunChannels={() => void sync.runChannels()}
+            onRunPlaylists={() => void sync.runPlaylists()}
             onRunYtrec={() => void sync.runYtrec()}
             onRunPodcasts={() => void sync.runPodcasts()}
           />

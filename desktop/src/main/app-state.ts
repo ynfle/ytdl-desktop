@@ -20,5 +20,7 @@ export const state = {
   syncRunning: false,
   channelMetaRunning: false,
   /** Bulk podcast metadata resolve (yt-dlp) in progress. */
-  podcastMetaRunning: false
+  podcastMetaRunning: false,
+  /** Bulk YouTube playlist metadata resolve (yt-dlp) in progress. */
+  playlistMetaRunning: false
 }

@@ -1,15 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { motion } from 'motion/react'
-import { Download, Mic2, Tv, Loader2, Terminal } from 'lucide-react'
+import { Download, ListVideo, Mic2, Tv, Loader2, Terminal } from 'lucide-react'
 
 type Props = {
   busy: boolean
   channelsBusy: boolean
   podcastsBusy: boolean
+  playlistsBusy: boolean
   log: string
   ytrecCount: number
   onYtrecCountChange: (n: number) => void
   onRunChannels: () => void
+  onRunPlaylists: () => void
   onRunYtrec: () => void
   onRunPodcasts: () => void
 }
@@ -19,14 +21,16 @@ export default function DownloadsPage({
   busy,
   channelsBusy,
   podcastsBusy,
+  playlistsBusy,
   log,
   ytrecCount,
   onYtrecCountChange,
   onRunChannels,
+  onRunPlaylists,
   onRunYtrec,
   onRunPodcasts
 }: Props) {
-  const anyBusy = busy || channelsBusy || podcastsBusy
+  const anyBusy = busy || channelsBusy || podcastsBusy || playlistsBusy
   const logRef = useRef<HTMLPreElement>(null)
 
   /** Auto-scroll log to bottom. */
@@ -51,8 +55,7 @@ export default function DownloadsPage({
       </div>
 
       {/* Action cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4 shrink-0">
-        {/* Channel download card */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 px-6 py-4 shrink-0">
         <motion.button
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.99 }}
@@ -66,7 +69,25 @@ export default function DownloadsPage({
           <div>
             <p className="text-sm font-semibold">Download Channels</p>
             <p className="text-[11px] text-text-muted mt-0.5">
-              Fetch latest videos from all channels.txt entries
+              Fetch from channels.txt only (latest 10 per channel, shared downloaded.txt)
+            </p>
+          </div>
+        </motion.button>
+
+        <motion.button
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.99 }}
+          disabled={anyBusy}
+          onClick={onRunPlaylists}
+          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
+        >
+          <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
+            <ListVideo size={18} className="text-accent" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Download Playlists</p>
+            <p className="text-[11px] text-text-muted mt-0.5">
+              Fetch from playlists.txt only (same archive and folder layout as channels)
             </p>
           </div>
         </motion.button>

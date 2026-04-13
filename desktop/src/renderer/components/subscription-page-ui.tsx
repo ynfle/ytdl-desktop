@@ -24,13 +24,38 @@ export function useSubscriptionPageLocks(
   podcastsBusy: boolean,
   channelsBusy: boolean,
   addPreviewLoading: boolean,
-  addConfirmBusy: boolean
+  addConfirmBusy: boolean,
+  playlistsBusy = false,
+  playlistAddPreviewLoading = false,
+  playlistAddConfirmBusy = false,
+  channelsAddPreviewLoading = false,
+  channelsAddConfirmBusy = false
 ): { anyBusy: boolean; addInteractionLocked: boolean } {
   return useMemo(() => {
     const locked =
-      busy || podcastsBusy || channelsBusy || addPreviewLoading || addConfirmBusy
+      busy ||
+      podcastsBusy ||
+      channelsBusy ||
+      playlistsBusy ||
+      addPreviewLoading ||
+      addConfirmBusy ||
+      playlistAddPreviewLoading ||
+      playlistAddConfirmBusy ||
+      channelsAddPreviewLoading ||
+      channelsAddConfirmBusy
     return { anyBusy: locked, addInteractionLocked: locked }
-  }, [busy, podcastsBusy, channelsBusy, addPreviewLoading, addConfirmBusy])
+  }, [
+    busy,
+    podcastsBusy,
+    channelsBusy,
+    playlistsBusy,
+    addPreviewLoading,
+    addConfirmBusy,
+    playlistAddPreviewLoading,
+    playlistAddConfirmBusy,
+    channelsAddPreviewLoading,
+    channelsAddConfirmBusy
+  ])
 }
 
 /** Parse `channels:resolveProgress` / `podcasts:resolveProgress` text like `3/12`. */

@@ -89,6 +89,12 @@ export function registerChannelsIpc(): void {
         error: 'Channel lookup is already running; wait for it to finish.'
       }
     }
+    if (state.playlistMetaRunning) {
+      return {
+        ok: false as const,
+        error: 'Playlist metadata refresh is running; wait for it to finish.'
+      }
+    }
     if (typeof raw !== 'string') {
       return { ok: false as const, error: 'Invalid input.' }
     }
@@ -146,6 +152,12 @@ export function registerChannelsIpc(): void {
       return {
         ok: false as const,
         error: 'Podcast metadata refresh is running; wait for it to finish.'
+      }
+    }
+    if (state.playlistMetaRunning) {
+      return {
+        ok: false as const,
+        error: 'Playlist metadata refresh is running; wait for it to finish.'
       }
     }
     if (typeof identifierParam !== 'string') {
@@ -217,6 +229,9 @@ export function registerChannelsIpc(): void {
     }
     if (state.podcastMetaRunning) {
       return { ok: false as const, error: 'Podcast metadata refresh is running.' }
+    }
+    if (state.playlistMetaRunning) {
+      return { ok: false as const, error: 'Playlist metadata refresh is running.' }
     }
     if (state.channelMetaRunning) {
       return { ok: false as const, error: 'Channel lookup is already running.' }

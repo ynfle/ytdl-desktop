@@ -63,3 +63,23 @@ export function broadcastPodcastResolveDone(payload: {
 }): void {
   sendMain('podcasts:resolveDone', payload)
 }
+
+export function broadcastPlaylistProgress(payload: {
+  index: number
+  total: number
+  identifier: string
+}): void {
+  sendMain('playlists:resolveProgress', payload)
+}
+
+export function broadcastPlaylistRow(payload: { index: number; row: ChannelInfoRow }): void {
+  sendMain('playlists:resolveRow', payload)
+}
+
+export function broadcastPlaylistResolveDone(payload: {
+  ok: boolean
+  rows?: ChannelInfoRow[]
+  error?: string
+}): void {
+  sendMain('playlists:resolveDone', payload)
+}

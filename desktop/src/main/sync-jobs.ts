@@ -2,7 +2,7 @@ import { join } from 'path'
 import { promises as fs } from 'fs'
 import { broadcastLibraryStale, broadcastLog } from './broadcast'
 import { folderIdFromFeedUrl } from './podcast-input'
-import { readChannelsFile, readPodcastsLinesOrEmpty } from './library-scan'
+import { readChannelsFile, readPlaylistsLinesOrEmpty, readPodcastsLinesOrEmpty } from './library-scan'
 import { runYtDlp } from './yt-dlp-runner'
 import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
@@ -21,9 +21,39 @@ async function withVideosLibraryWatchDuringJob<T>(
   }
 }
 
-/** Channel download: mirrors scripts/download_videos.sh (non-ytrec branch). */
+/** Channel download: channels.txt only (same flags as `scripts/download_videos.sh channels`). */
 export async function syncChannelsJob(dataRoot: string): Promise<void> {
   await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncChannelsJobInner(dataRoot))
+}
+
+/** Playlist download: playlists.txt only (shared downloaded.txt + output template). */
+export async function syncPlaylistsJob(dataRoot: string): Promise<void> {
+  await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncPlaylistsJobInner(dataRoot))
+}
+
+/** Shared yt-dlp argv for channel /videos tab and playlist URLs (same archive + output template). */
+function youtubeChannelLikeDownloadArgs(targetUrl: string): string[] {
+  return [
+    '--playlist-items',
+    '1-10',
+    '--download-archive',
+    'downloaded.txt',
+    '--ignore-errors',
+    '--remote-components',
+    'ejs:github',
+    '-f',
+    'bestvideo[height<=720]+bestaudio/best[height<=720]',
+    '--write-thumbnail',
+    '--embed-thumbnail',
+    '--convert-thumbnails',
+    'jpg',
+    '-t',
+    'mp4',
+    '-o',
+    'videos/%(uploader)s/%(title)s.%(ext)s',
+    '--restrict-filenames',
+    targetUrl
+  ]
 }
 
 async function runSyncChannelsJobInner(dataRoot: string): Promise<void> {
@@ -31,31 +61,26 @@ async function runSyncChannelsJobInner(dataRoot: string): Promise<void> {
   broadcastLog(`[ytdl] channels.txt: ${lines.length} lines\n`)
   for (const channel_identifier of lines) {
     const url = `https://www.youtube.com/${channel_identifier}/videos`
-    const args = [
-      '--playlist-items',
-      '1-10',
-      '--download-archive',
-      'downloaded.txt',
-      '--ignore-errors',
-      '--remote-components',
-      'ejs:github',
-      '-f',
-      'bestvideo[height<=720]+bestaudio/best[height<=720]',
-      '--write-thumbnail',
-      '--embed-thumbnail',
-      '--convert-thumbnails',
-      'jpg',
-      '-t',
-      'mp4',
-      '-o',
-      'videos/%(uploader)s/%(title)s.%(ext)s',
-      '--restrict-filenames',
-      url
-    ]
+    const args = youtubeChannelLikeDownloadArgs(url)
     broadcastLog(`\n[ytdl] === ${url} ===\n`)
     const { code } = await runYtDlp(args, dataRoot)
     if (code !== 0) {
       broadcastLog(`[ytdl] warning: exit code ${code} for ${url}\n`)
+    }
+  }
+}
+
+async function runSyncPlaylistsJobInner(dataRoot: string): Promise<void> {
+  const playlistLines = await readPlaylistsLinesOrEmpty(dataRoot)
+  broadcastLog(`[ytdl] playlists.txt: ${playlistLines.length} lines\n`)
+  for (const playlistUrl of playlistLines) {
+    const args = youtubeChannelLikeDownloadArgs(playlistUrl)
+    const logLabel =
+      playlistUrl.length > 96 ? `${playlistUrl.slice(0, 96)}…` : playlistUrl
+    broadcastLog(`\n[ytdl] === playlist ${logLabel} ===\n`)
+    const { code } = await runYtDlp(args, dataRoot)
+    if (code !== 0) {
+      broadcastLog(`[ytdl] warning: exit code ${code} for playlist\n`)
     }
   }
 }

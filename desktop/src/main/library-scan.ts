@@ -86,6 +86,7 @@ export async function readChannelsFile(dataRoot: string): Promise<string[]> {
  * Creates the file if needed. Caller must pass an already-normalized identifier.
  */
 const PODCASTS_FILE = 'podcasts.txt' as const
+const PLAYLISTS_FILE = 'playlists.txt' as const
 
 /** Same line rules as channels.txt; returns [] when podcasts.txt is missing. */
 export async function readPodcastsLinesOrEmpty(dataRoot: string): Promise<string[]> {
@@ -164,6 +165,58 @@ export async function removePodcastLine(
     return { ok: true }
   } catch (e) {
     console.error(LOG, 'removePodcastLine write failed', e)
+    return { ok: false, error: String(e) }
+  }
+}
+
+/** Same line rules as channels.txt; returns [] when playlists.txt is missing. */
+export async function readPlaylistsLinesOrEmpty(dataRoot: string): Promise<string[]> {
+  try {
+    return await readPlaylistsFile(dataRoot)
+  } catch (e) {
+    if (isEnoent(e)) return []
+    throw e
+  }
+}
+
+export async function readPlaylistsFile(dataRoot: string): Promise<string[]> {
+  return readDataRootLinesFile(dataRoot, PLAYLISTS_FILE)
+}
+
+/**
+ * Append one canonical playlist URL to playlists.txt (caller passes normalized URL).
+ */
+export async function appendPlaylistLine(dataRoot: string, playlistUrl: string): Promise<AppendChannelResult> {
+  const p = join(dataRoot, PLAYLISTS_FILE)
+  let existing: string[]
+  try {
+    existing = await readPlaylistsFile(dataRoot)
+  } catch (e) {
+    if (!isEnoent(e)) {
+      console.error(LOG, 'appendPlaylistLine read failed', e)
+      return { ok: false, error: String(e) }
+    }
+    existing = []
+  }
+  if (existing.includes(playlistUrl)) {
+    console.info(LOG, 'appendPlaylistLine duplicate skip', playlistUrl.slice(0, 72))
+    return { ok: false, duplicate: true }
+  }
+  try {
+    let toWrite = `${playlistUrl}\n`
+    try {
+      const prev = await fs.readFile(p, 'utf-8')
+      if (prev.length > 0 && !prev.endsWith('\n')) {
+        toWrite = `\n${toWrite}`
+      }
+    } catch (e) {
+      if (!isEnoent(e)) throw e
+    }
+    await fs.appendFile(p, toWrite, 'utf-8')
+    console.info(LOG, 'appendPlaylistLine ok', { dataRoot, urlPreview: playlistUrl.slice(0, 64) })
+    return { ok: true }
+  } catch (e) {
+    console.error(LOG, 'appendPlaylistLine write failed', e)
     return { ok: false, error: String(e) }
   }
 }

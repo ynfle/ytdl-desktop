@@ -140,6 +140,12 @@ type Props = {
   busy: boolean
   podcastsBusy: boolean
   channelsBusy: boolean
+  /** Cross-page lock: channel add flow on Channels tab. */
+  channelsAddPreviewLoading: boolean
+  channelsAddConfirmBusy: boolean
+  playlistsBusy: boolean
+  playlistAddPreviewLoading: boolean
+  playlistAddConfirmBusy: boolean
   progress: string | null
   onReload: () => void
   onFetchMeta: () => void
@@ -165,6 +171,11 @@ export default function PodcastsPage({
   busy,
   podcastsBusy,
   channelsBusy,
+  channelsAddPreviewLoading,
+  channelsAddConfirmBusy,
+  playlistsBusy,
+  playlistAddPreviewLoading,
+  playlistAddConfirmBusy,
   progress,
   onReload,
   onFetchMeta,
@@ -191,7 +202,12 @@ export default function PodcastsPage({
     podcastsBusy,
     channelsBusy,
     addPreviewLoading,
-    addConfirmBusy
+    addConfirmBusy,
+    playlistsBusy,
+    playlistAddPreviewLoading,
+    playlistAddConfirmBusy,
+    channelsAddPreviewLoading,
+    channelsAddConfirmBusy
   )
 
   const addBar = (

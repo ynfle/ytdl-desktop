@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const LOG_CAP = 200_000
 
-/** Download sync state: channel + ytrec downloads, log accumulation, IPC subscriptions. */
+/** Download sync state: channel / playlist / ytrec / podcast downloads, log + IPC. */
 export function useSync() {
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
@@ -36,9 +36,17 @@ export function useSync() {
 
   const runChannels = useCallback(async () => {
     setBusy(true)
-    appendLog('\n[ui] starting channel sync…\n')
+    appendLog('\n[ui] starting channel sync (channels.txt)…\n')
     const r = await window.ytdl.syncChannels()
     if (!r.ok) appendLog(`[ui] syncChannels invoke error: ${r.error}\n`)
+    setBusy(false)
+  }, [appendLog])
+
+  const runPlaylists = useCallback(async () => {
+    setBusy(true)
+    appendLog('\n[ui] starting playlist sync (playlists.txt)…\n')
+    const r = await window.ytdl.syncPlaylists()
+    if (!r.ok) appendLog(`[ui] syncPlaylists invoke error: ${r.error}\n`)
     setBusy(false)
   }, [appendLog])
 
@@ -65,6 +73,7 @@ export function useSync() {
     ytrecCount,
     setYtrecCount,
     runChannels,
+    runPlaylists,
     runYtrec,
     runPodcasts,
     logEndRef

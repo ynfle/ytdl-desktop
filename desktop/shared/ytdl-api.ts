@@ -109,6 +109,8 @@ export type YtdlApi = {
   /** Remove one library media file under the data root (permanent delete). */
   deleteLibraryMedia: (relPath: string) => Promise<{ ok: boolean; error?: string }>
   syncChannels: () => Promise<{ ok: boolean; error?: string }>
+  /** playlists.txt only; same archive as channel sync. */
+  syncPlaylists: () => Promise<{ ok: boolean; error?: string }>
   syncYtrec: (count: number) => Promise<{ ok: boolean; error?: string }>
   syncPodcasts: () => Promise<{ ok: boolean; error?: string }>
   /** Lines from channels.txt (no network). */
@@ -140,6 +142,32 @@ export type YtdlApi = {
    * Append normalized identifier to channels.txt after re-validating metadata (cache or re-resolve).
    */
   addChannel: (identifier: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
+  /** Lines from playlists.txt (no network). */
+  readPlaylistUrls: () => Promise<{ ok: boolean; urls?: string[]; error?: string }>
+  /** playlists.txt rows merged with channel-display cache (same bucket as channels). */
+  hydratePlaylistRowsFromCache: () => Promise<{ ok: boolean; rows?: ChannelInfoRow[]; error?: string }>
+  /**
+   * Starts playlist title/thumbnail resolution; streams on `onPlaylistResolveRow`, done on `onPlaylistResolveDone`.
+   */
+  resolvePlaylistInfo: (opts?: { force?: boolean }) => Promise<{
+    ok: boolean
+    started?: boolean
+    error?: string
+  }>
+  previewPlaylist: (raw: string) => Promise<{
+    ok: boolean
+    playlistUrl?: string
+    row?: ChannelInfoRow
+    error?: string
+  }>
+  addPlaylist: (playlistUrl: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
+  onPlaylistResolveProgress: (
+    cb: (p: { index: number; total: number; identifier: string }) => void
+  ) => () => void
+  onPlaylistResolveRow: (cb: (p: { index: number; row: ChannelInfoRow }) => void) => () => void
+  onPlaylistResolveDone: (
+    cb: (p: { ok: boolean; rows?: ChannelInfoRow[]; error?: string }) => void
+  ) => () => void
   /** iTunes Search API; no yt-dlp. */
   searchApplePodcasts: (term: string) => Promise<{
     ok: boolean

@@ -3,9 +3,9 @@ import { state } from './app-state'
 import { broadcastDone } from './broadcast'
 import { getDataDir } from './config-store'
 import { LOG } from './constants'
-import { syncChannelsJob, syncPodcastsJob, syncYtrecJob } from './sync-jobs'
+import { syncChannelsJob, syncPlaylistsJob, syncPodcastsJob, syncYtrecJob } from './sync-jobs'
 
-/** YouTube channel + ytrec downloads — registered after `library:mediaUrl` in bootstrap. */
+/** YouTube channel, playlist, and ytrec downloads — registered after `library:mediaUrl` in bootstrap. */
 export function registerSyncChannelsYtrecIpc(): void {
   ipcMain.handle('sync:channels', async () => {
     if (state.channelMetaRunning) {
@@ -13,6 +13,9 @@ export function registerSyncChannelsYtrecIpc(): void {
     }
     if (state.podcastMetaRunning) {
       return { ok: false as const, error: 'Podcast metadata refresh in progress' }
+    }
+    if (state.playlistMetaRunning) {
+      return { ok: false as const, error: 'Playlist metadata refresh in progress' }
     }
     if (state.syncRunning) {
       return { ok: false as const, error: 'Sync already running' }
@@ -33,6 +36,35 @@ export function registerSyncChannelsYtrecIpc(): void {
     }
   })
 
+  ipcMain.handle('sync:playlists', async () => {
+    if (state.channelMetaRunning) {
+      return { ok: false as const, error: 'Channel name lookup in progress' }
+    }
+    if (state.podcastMetaRunning) {
+      return { ok: false as const, error: 'Podcast metadata refresh in progress' }
+    }
+    if (state.playlistMetaRunning) {
+      return { ok: false as const, error: 'Playlist metadata refresh in progress' }
+    }
+    if (state.syncRunning) {
+      return { ok: false as const, error: 'Sync already running' }
+    }
+    state.syncRunning = true
+    const root = getDataDir()
+    try {
+      await syncPlaylistsJob(root)
+      broadcastDone({ ok: true })
+      return { ok: true as const }
+    } catch (e) {
+      const msg = String(e)
+      console.error(LOG, 'sync:playlists', e)
+      broadcastDone({ ok: false, error: msg })
+      return { ok: false as const, error: msg }
+    } finally {
+      state.syncRunning = false
+    }
+  })
+
   ipcMain.handle('sync:ytrec', async (_e, count: number) => {
     if (!Number.isInteger(count) || count < 1) {
       return { ok: false as const, error: 'count must be a positive integer' }
@@ -42,6 +74,9 @@ export function registerSyncChannelsYtrecIpc(): void {
     }
     if (state.podcastMetaRunning) {
       return { ok: false as const, error: 'Podcast metadata refresh in progress' }
+    }
+    if (state.playlistMetaRunning) {
+      return { ok: false as const, error: 'Playlist metadata refresh in progress' }
     }
     if (state.syncRunning) {
       return { ok: false as const, error: 'Sync already running' }
@@ -71,6 +106,9 @@ export function registerSyncPodcastsIpc(): void {
     }
     if (state.podcastMetaRunning) {
       return { ok: false as const, error: 'Podcast metadata refresh in progress' }
+    }
+    if (state.playlistMetaRunning) {
+      return { ok: false as const, error: 'Playlist metadata refresh in progress' }
     }
     if (state.syncRunning) {
       return { ok: false as const, error: 'Sync already running' }

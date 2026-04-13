@@ -20,6 +20,7 @@ const api: YtdlApi = {
   mediaUrl: (relPath: string) => ipcRenderer.invoke('library:mediaUrl', relPath),
   deleteLibraryMedia: (relPath: string) => ipcRenderer.invoke('library:deleteMedia', relPath),
   syncChannels: () => ipcRenderer.invoke('sync:channels'),
+  syncPlaylists: () => ipcRenderer.invoke('sync:playlists'),
   syncYtrec: (count: number) => ipcRenderer.invoke('sync:ytrec', count),
   syncPodcasts: () => ipcRenderer.invoke('sync:podcasts'),
   readChannelIdentifiers: () => ipcRenderer.invoke('channels:readIdentifiers'),
@@ -28,6 +29,34 @@ const api: YtdlApi = {
     ipcRenderer.invoke('channels:resolveInfo', opts ?? {}),
   previewChannel: (raw: string) => ipcRenderer.invoke('channels:previewChannel', raw),
   addChannel: (identifier: string) => ipcRenderer.invoke('channels:addChannel', identifier),
+  readPlaylistUrls: () => ipcRenderer.invoke('playlists:readUrls'),
+  hydratePlaylistRowsFromCache: () => ipcRenderer.invoke('playlists:hydrateFromCache'),
+  resolvePlaylistInfo: (opts?: { force?: boolean }) =>
+    ipcRenderer.invoke('playlists:resolveInfo', opts ?? {}),
+  previewPlaylist: (raw: string) => ipcRenderer.invoke('playlists:preview', raw),
+  addPlaylist: (playlistUrl: string) => ipcRenderer.invoke('playlists:add', playlistUrl),
+  onPlaylistResolveProgress: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      payload: { index: number; total: number; identifier: string }
+    ) => cb(payload)
+    ipcRenderer.on('playlists:resolveProgress', listener)
+    return () => ipcRenderer.removeListener('playlists:resolveProgress', listener)
+  },
+  onPlaylistResolveRow: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, payload: { index: number; row: ChannelInfoRow }) =>
+      cb(payload)
+    ipcRenderer.on('playlists:resolveRow', listener)
+    return () => ipcRenderer.removeListener('playlists:resolveRow', listener)
+  },
+  onPlaylistResolveDone: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      payload: { ok: boolean; rows?: ChannelInfoRow[]; error?: string }
+    ) => cb(payload)
+    ipcRenderer.on('playlists:resolveDone', listener)
+    return () => ipcRenderer.removeListener('playlists:resolveDone', listener)
+  },
   searchApplePodcasts: (term: string) => ipcRenderer.invoke('podcasts:searchApplePodcasts', term),
   previewPodcast: (raw: string, opts?: { artworkUrl?: string | null }) =>
     ipcRenderer.invoke('podcasts:previewPodcast', raw, opts ?? {}),
