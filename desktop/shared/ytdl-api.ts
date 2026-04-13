@@ -82,6 +82,8 @@ export type FloatingPlayerOpenPayload = {
   currentTime: number
   volume: number
   playing: boolean
+  /** Episode sidecar or podcast show cover (loopback URLs); shown when audio has no video track. */
+  artworkUrl?: string | null
 }
 
 /** Main window receives this when the user closes the floating player (not when the track ends). */

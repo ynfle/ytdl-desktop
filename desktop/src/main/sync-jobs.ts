@@ -3,6 +3,7 @@ import { promises as fs } from 'fs'
 import { broadcastLibraryStale, broadcastLog } from './broadcast'
 import { folderIdFromFeedUrl } from './podcast-input'
 import { readChannelsFile, readPlaylistsLinesOrEmpty, readPodcastsLinesOrEmpty } from './library-scan'
+import { LOG } from './constants'
 import { runYtDlp } from './yt-dlp-runner'
 import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
@@ -110,6 +111,10 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
       '--ignore-errors',
       '--remote-components',
       'ejs:github',
+      '--write-thumbnail',
+      '--embed-thumbnail',
+      '--convert-thumbnails',
+      'jpg',
       '-f',
       'bestaudio/best',
       '-o',
@@ -118,6 +123,12 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
       feedUrl
     ]
     broadcastLog(`\n[ytdl] === podcast ${feedUrl.slice(0, 72)}… ===\n`)
+    broadcastLog('[ytdl] podcast: episode thumbnails enabled (write-thumbnail, embed-thumbnail, jpg)\n')
+    console.info(LOG, 'podcast sync feed starting', {
+      folderId,
+      thumbnails: true,
+      feedPreview: feedUrl.slice(0, 72)
+    })
     const { code } = await runYtDlp(args, dataRoot)
     if (code !== 0) {
       broadcastLog(`[ytdl] warning: exit code ${code} for podcast feed\n`)

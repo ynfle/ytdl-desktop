@@ -54,11 +54,32 @@
         position: relative;
       }
 
+      /* Episode / show artwork when the file is audio-only (no decoded video plane). */
+      #art {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        margin: auto;
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        display: none;
+        pointer-events: none;
+      }
+
       video {
         width: 100%;
         height: 100%;
         max-height: 100%;
         object-fit: contain;
+      }
+
+      video.floating-audio-only {
+        opacity: 0;
       }
 
       /* ── Controls chrome ── */
@@ -213,6 +234,7 @@
   </head>
   <body>
     <div class="video-wrap">
+      <img id="art" alt="" />
       <video id="v" playsinline></video>
     </div>
     <div class="controls">
@@ -239,6 +261,7 @@
         const bPlay = document.getElementById('bPlay')
         const bFwd = document.getElementById('bFwd')
         const bClose = document.getElementById('bClose')
+        const art = document.getElementById('art')
         if (!v || !timeline || !tCur || !tDur || !bBack || !bPlay || !bFwd || !bClose) return
 
         /** While true, ignore `timeupdate` for slider position (user is scrubbing). */
@@ -403,9 +426,51 @@
         })
 
         window.floatingPlayer.onInit(function (p) {
-          console.log('[floating-player] init', { urlLen: p.url?.length, t: p.currentTime, playing: p.playing })
-          v.src = p.url
+          console.log('[floating-player] init', {
+            urlLen: p.url?.length,
+            t: p.currentTime,
+            playing: p.playing,
+            hasArtwork: Boolean(p.artworkUrl)
+          })
           v.volume = typeof p.volume === 'number' ? p.volume : 1
+          v.poster = typeof p.artworkUrl === 'string' ? p.artworkUrl : ''
+
+          /** Match main window: show artwork until a real video frame exists. */
+          function syncArtworkLayer() {
+            if (!art) return
+            var url = typeof p.artworkUrl === 'string' ? p.artworkUrl : ''
+            if (!url) {
+              art.style.display = 'none'
+              art.removeAttribute('src')
+              v.classList.remove('floating-audio-only')
+              return
+            }
+            var hasVideo = v.videoWidth > 0 && v.videoHeight > 0
+            if (hasVideo) {
+              art.style.display = 'none'
+              v.classList.remove('floating-audio-only')
+              console.log('[floating-player] artwork hidden (video track)', {
+                videoWidth: v.videoWidth,
+                videoHeight: v.videoHeight
+              })
+            } else {
+              if (art.src !== url) art.src = url
+              art.style.display = 'block'
+              v.classList.add('floating-audio-only')
+              console.log('[floating-player] artwork shown (audio-only or pending)', {
+                videoWidth: v.videoWidth,
+                videoHeight: v.videoHeight
+              })
+            }
+          }
+
+          if (p.artworkUrl && art) {
+            art.src = p.artworkUrl
+            art.style.display = 'block'
+            v.classList.add('floating-audio-only')
+          }
+
+          v.src = p.url
           function onMeta() {
             v.removeEventListener('loadedmetadata', onMeta)
             try {
@@ -418,8 +483,10 @@
             updatePlayLabel()
             refreshTimelineFromVideo()
             sendProgressSync(true)
+            syncArtworkLayer()
           }
           v.addEventListener('loadedmetadata', onMeta)
+          v.addEventListener('resize', syncArtworkLayer)
           v.addEventListener('error', function () {
             const msg = v.error ? 'code ' + v.error.code : 'unknown'
             window.floatingPlayer.error('video error ' + msg)

@@ -42,7 +42,7 @@ export default function App(): React.ReactElement {
   const playlists = usePlaylists(sync.appendLog, dataDir)
   const podcasts = usePodcasts(sync.appendLog, dataDir)
   const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows, podcasts.podcastRows)
-  const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef)
+  const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef, podcasts.podcastRows)
 
   const libraryThumbByRel = useMemo(() => {
     const m = new Map<string, string | null>()
@@ -56,7 +56,16 @@ export default function App(): React.ReactElement {
     () => lib.library.find((v) => v.relPath === playback.currentRel)?.thumbRelPath ?? null,
     [lib.library, playback.currentRel]
   )
-  const videoPosterUrl = useLoopbackMediaUrl(currentTrackThumbRel)
+  /** Show cover when episode has no sidecar thumb yet. */
+  const currentTrackPodcastLogoUrl = useMemo(() => {
+    const rel = playback.currentRel
+    if (!rel) return null
+    const { groupKey, channelFolder } = parseLibraryRelPath(rel)
+    if (!groupKey.startsWith('podcast/')) return null
+    return podcasts.podcastRows.find((r) => r.folderId === channelFolder)?.logoUrl ?? null
+  }, [playback.currentRel, podcasts.podcastRows])
+  const episodeThumbLoopbackUrl = useLoopbackMediaUrl(currentTrackThumbRel)
+  const displayArtworkUrl = episodeThumbLoopbackUrl ?? currentTrackPodcastLogoUrl ?? null
 
   /** Shared path after `scanLibrary`: merge resume/session from disk into playback state. */
   const applyLibraryScanResult = useCallback(
@@ -323,7 +332,7 @@ export default function App(): React.ReactElement {
         floatingSync={playback.floatingSync}
         onFloatingSeek={playback.floatingSeek}
         onFloatingTogglePlay={playback.floatingTogglePlay}
-        posterUrl={videoPosterUrl}
+        posterUrl={displayArtworkUrl}
       >
         <div className="flex-1 min-h-0 overflow-hidden relative">
           <AnimatePresence mode="wait">

@@ -292,9 +292,32 @@ function usePlayerChrome({
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isPaused, setIsPaused] = useState(true)
+  /** null until metadata/resize; false = audio-only → show {@link posterUrl} behind hidden video. */
+  const [hasVideoFrame, setHasVideoFrame] = useState<boolean | null>(null)
   const seekRef = useRef(false)
 
   const { showInlineVideo, collapseVideoAside } = useInlineVideoPip(videoRef, currentRel, documentPipActive)
+
+  useEffect(() => {
+    setHasVideoFrame(null)
+    console.info('[Player] video pane: reset hasVideoFrame for new track', { currentRel })
+  }, [currentRel])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    const onResize = (): void => {
+      const ok = v.videoWidth > 0 && v.videoHeight > 0
+      setHasVideoFrame(ok)
+      console.info('[Player] video pane: resize', {
+        hasVideoFrame: ok,
+        videoWidth: v.videoWidth,
+        videoHeight: v.videoHeight
+      })
+    }
+    v.addEventListener('resize', onResize)
+    return () => v.removeEventListener('resize', onResize)
+  }, [currentRel, videoRef])
   const fileName = currentRel ? parseLibraryRelPath(currentRel).fileName : null
   /** Electron floating PiP: transport drives child window, not the paused main `<video>`. */
   const remoteFloatingTransport = Boolean(floatingPlayerActive || floatingSync)
@@ -326,7 +349,15 @@ function usePlayerChrome({
 
   const handleLoadedMetadata = useCallback(() => {
     const v = videoRef.current
-    if (v) setDuration(v.duration || 0)
+    if (!v) return
+    setDuration(v.duration || 0)
+    const ok = v.videoWidth > 0 && v.videoHeight > 0
+    setHasVideoFrame(ok)
+    console.info('[Player] video pane: loadedmetadata', {
+      hasVideoFrame: ok,
+      videoWidth: v.videoWidth,
+      videoHeight: v.videoHeight
+    })
   }, [videoRef])
 
   const onScrub = useCallback(
@@ -370,6 +401,9 @@ function usePlayerChrome({
   const barPaused = floatingSync ? !floatingSync.playing : isPaused
   const pct = barDuration > 0 ? (barTime / barDuration) * 100 : 0
 
+  /** Keep artwork visible until we know the media has a decoded video plane (audio posters drop in Chromium). */
+  const showArtworkLayer = Boolean(showInlineVideo && posterUrl && hasVideoFrame !== true)
+
   const videoPane = (
     <div
       className={
@@ -386,9 +420,20 @@ function usePlayerChrome({
             : 'pointer-events-none fixed -left-[9999px] -top-[9999px] h-px w-px overflow-hidden'
         }
       >
+        {showArtworkLayer && posterUrl ? (
+          <img
+            src={posterUrl}
+            alt=""
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+          />
+        ) : null}
         <video
           ref={videoRef}
-          className={showInlineVideo ? 'max-h-full max-w-full object-contain' : 'block h-px w-px'}
+          className={
+            showInlineVideo
+              ? `relative z-10 max-h-full max-w-full object-contain${showArtworkLayer ? ' opacity-0' : ''}`
+              : 'block h-px w-px'
+          }
           poster={posterUrl ?? undefined}
           onEnded={onVideoEnded}
           onError={onVideoError}

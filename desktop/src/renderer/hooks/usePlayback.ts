@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   FloatingPlayerSyncPayload,
   LibraryVideo,
-  PlaybackSpotSnapshot
+  PlaybackSpotSnapshot,
+  PodcastInfoRow
 } from '../../../shared/ytdl-api'
 import { mountDocumentPipChrome } from '../lib/documentPipChrome'
 import { parseLibraryRelPath } from './useLibrary'
@@ -24,6 +25,43 @@ const MEDIA_SESSION_SEEK_SEC = 10
  */
 function shouldUseNativePictureInPictureOnly(): boolean {
   return typeof navigator !== 'undefined' && /Electron\//.test(navigator.userAgent)
+}
+
+/**
+ * Episode sidecar thumb (loopback) first, then podcast show cover for `videos/podcasts/…` paths.
+ * Used when opening the Electron floating player so artwork matches the track before React re-renders.
+ */
+async function resolveFloatingArtworkUrl(
+  rel: string,
+  library: LibraryVideo[],
+  podcastRows: PodcastInfoRow[]
+): Promise<string | null> {
+  const entry = library.find((v) => v.relPath === rel)
+  if (entry?.thumbRelPath) {
+    const r = await window.ytdl.mediaUrl(entry.thumbRelPath)
+    if (r.ok && r.url) {
+      console.info('[usePlayback] floating artwork: using episode sidecar thumb', {
+        rel,
+        thumbRelPath: entry.thumbRelPath
+      })
+      return r.url
+    }
+    console.warn('[usePlayback] floating artwork: thumb mediaUrl failed', {
+      thumbRelPath: entry.thumbRelPath,
+      error: r.ok ? undefined : r.error
+    })
+  }
+  const { groupKey, channelFolder } = parseLibraryRelPath(rel)
+  if (groupKey.startsWith('podcast/')) {
+    const logo = podcastRows.find((row) => row.folderId === channelFolder)?.logoUrl ?? null
+    if (logo) {
+      console.info('[usePlayback] floating artwork: using podcast show logo', { folderId: channelFolder })
+    } else {
+      console.info('[usePlayback] floating artwork: no podcast logo for folder', channelFolder)
+    }
+    return logo
+  }
+  return null
 }
 
 /**
@@ -87,8 +125,14 @@ function clampExplicitStartIndex(n: number, playlistLen: number): number {
 export function usePlayback(
   appendLog: (chunk: string) => void,
   library: LibraryVideo[],
-  allowSpotSaveRef: React.MutableRefObject<boolean>
+  allowSpotSaveRef: React.MutableRefObject<boolean>,
+  podcastRows: PodcastInfoRow[]
 ) {
+  /** Latest library / podcast metadata for IPC helpers (avoid stale closures in playRel). */
+  const libraryRef = useRef(library)
+  libraryRef.current = library
+  const podcastRowsRef = useRef(podcastRows)
+  podcastRowsRef.current = podcastRows
   /**
    * Pre-play staging when `playlist` is still empty (single-click add from library before Play).
    * Once a session has a playlist, further idle adds append on `playlist` instead.
@@ -280,14 +324,20 @@ export function usePlayback(
               relPath,
               urlSample: url.slice(0, 80)
             })
-            void window.ytdl
-              .openFloatingPlayer({
-                url,
-                currentTime: v.currentTime,
-                volume: v.volume,
-                playing: true
-              })
-              .then((openR) => {
+            void (async (): Promise<void> => {
+              const artworkUrl = await resolveFloatingArtworkUrl(
+                relPath,
+                libraryRef.current,
+                podcastRowsRef.current
+              )
+              try {
+                const openR = await window.ytdl.openFloatingPlayer({
+                  url,
+                  currentTime: v.currentTime,
+                  volume: v.volume,
+                  playing: true,
+                  artworkUrl
+                })
                 if (!openR || typeof openR !== 'object' || !('ok' in openR) || !openR.ok) {
                   const err =
                     openR && typeof openR === 'object' && 'error' in openR && typeof openR.error === 'string'
@@ -300,14 +350,16 @@ export function usePlayback(
                 }
                 setFloatingSync(null)
                 setFloatingPlayerActive(true)
-                console.log('[usePlayback] floating PiP next track window ready')
-              })
-              .catch((e) => {
+                console.log('[usePlayback] floating PiP next track window ready', {
+                  hasArtwork: Boolean(artworkUrl)
+                })
+              } catch (e) {
                 appendLog(`[ui] floating player IPC (next track): ${String(e)}\n`)
                 console.error('[usePlayback] openFloatingPlayer after advance threw', e)
                 setFloatingPlayerActive(false)
                 void v.play().catch((err) => appendLog(`[ui] play error: ${String(err)}\n`))
-              })
+              }
+            })()
             return
           }
           void v.play().catch((e) => appendLog(`[ui] play error: ${String(e)}\n`))
@@ -796,15 +848,22 @@ export function usePlayback(
       }
       const wasPlaying = !v.paused
       v.pause()
+      const relForArt = currentRelRef.current
+      const artworkUrl =
+        relForArt != null
+          ? await resolveFloatingArtworkUrl(relForArt, libraryRef.current, podcastRowsRef.current)
+          : null
       console.log('[usePlayback] enterPip: opening Electron floating player (seek controls)', {
-        urlSample: url.slice(0, 80)
+        urlSample: url.slice(0, 80),
+        hasArtwork: Boolean(artworkUrl)
       })
       try {
         const r = await window.ytdl.openFloatingPlayer({
           url,
           currentTime: v.currentTime,
           volume: v.volume,
-          playing: wasPlaying
+          playing: wasPlaying,
+          artworkUrl
         })
         if (!r || typeof r !== 'object' || !('ok' in r) || !r.ok) {
           const err =
