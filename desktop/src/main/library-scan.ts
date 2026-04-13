@@ -1,6 +1,7 @@
 import { extname, join, relative, sep } from 'path'
 import { promises as fs } from 'fs'
 import { LIBRARY_MEDIA_EXT, LOG } from './constants'
+import { resolveSidecarThumbnailRelPath } from './library-thumbnail'
 
 export type AppendChannelResult =
   | { ok: true }
@@ -22,9 +23,9 @@ export async function readChannelsLinesOrEmpty(dataRoot: string): Promise<string
 }
 
 export async function scanLibraryVideos(dataRoot: string): Promise<
-  { relPath: string; mtimeMs: number; size: number }[]
+  { relPath: string; mtimeMs: number; size: number; thumbRelPath: string | null }[]
 > {
-  const out: { relPath: string; mtimeMs: number; size: number }[] = []
+  const out: { relPath: string; mtimeMs: number; size: number; thumbRelPath: string | null }[] = []
 
   async function walk(dir: string): Promise<void> {
     let entries
@@ -48,10 +49,12 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
         if (!LIBRARY_MEDIA_EXT.has(ext)) continue
         const st = await fs.stat(full)
         const rel = relative(dataRoot, full)
+        const thumbRelPath = await resolveSidecarThumbnailRelPath(dataRoot, full)
         out.push({
           relPath: rel.split(sep).join('/'),
           mtimeMs: st.mtimeMs,
-          size: st.size
+          size: st.size,
+          thumbRelPath
         })
       }
     }
@@ -59,7 +62,8 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
 
   await walk(dataRoot)
   out.sort((a, b) => b.mtimeMs - a.mtimeMs)
-  console.info(LOG, 'scanLibrary count=', out.length)
+  const withThumb = out.filter((v) => v.thumbRelPath !== null).length
+  console.info(LOG, 'scanLibrary count=', out.length, 'with sidecar thumb=', withThumb)
   return out
 }
 

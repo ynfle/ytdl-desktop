@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { Play, Plus, Film, Trash2 } from 'lucide-react'
 import type { LibraryVideoGroup } from '../hooks/useLibrary'
 import { parseLibraryRelPath } from '../hooks/useLibrary'
+import { MediaThumbSlot } from './MediaThumbSlot'
 
 /** Human-friendly relative time label. */
 function relativeTime(ms: number): string {
@@ -113,6 +114,7 @@ export default function LibraryPage({
                     onDoubleClick={() => onPlayFrom(item.relPath)}
                     title={item.relPath}
                   >
+                    <MediaThumbSlot thumbRelPath={item.thumbRelPath} boxClassName="h-10 w-10" />
                     {/* Play indicator or queue icon on hover */}
                     <div className="w-5 shrink-0 flex items-center justify-center">
                       {isActive ? (

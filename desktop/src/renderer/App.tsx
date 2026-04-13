@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LibraryVideo, PlaybackSpotSnapshot } from '../../shared/ytdl-api'
 import { AnimatePresence, motion } from 'motion/react'
 
@@ -18,6 +18,7 @@ import { usePlaylists } from './hooks/usePlaylists'
 import { parseLibraryRelPath, useLibrary } from './hooks/useLibrary'
 import { usePodcasts } from './hooks/usePodcasts'
 import { usePlayback } from './hooks/usePlayback'
+import { useLoopbackMediaUrl } from './hooks/useLoopbackMediaUrl'
 
 /**
  * App shell: sidebar navigation, page switching, persistent player bar,
@@ -42,6 +43,20 @@ export default function App(): React.ReactElement {
   const podcasts = usePodcasts(sync.appendLog, dataDir)
   const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows, podcasts.podcastRows)
   const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef)
+
+  const libraryThumbByRel = useMemo(() => {
+    const m = new Map<string, string | null>()
+    for (const v of lib.library) {
+      m.set(v.relPath, v.thumbRelPath)
+    }
+    return m
+  }, [lib.library])
+
+  const currentTrackThumbRel = useMemo(
+    () => lib.library.find((v) => v.relPath === playback.currentRel)?.thumbRelPath ?? null,
+    [lib.library, playback.currentRel]
+  )
+  const videoPosterUrl = useLoopbackMediaUrl(currentTrackThumbRel)
 
   /** Shared path after `scanLibrary`: merge resume/session from disk into playback state. */
   const applyLibraryScanResult = useCallback(
@@ -298,7 +313,7 @@ export default function App(): React.ReactElement {
         onPip={() => void playback.enterPip()}
         onSkipNext={playback.skipNext}
         onToggleQueue={() => setQueueOpen((o) => !o)}
-        queueCount={playback.queue.length}
+        queueCount={playback.upcomingTransportCount}
         onVideoEnded={playback.onVideoEnded}
         onVideoError={playback.onVideoError}
         onVideoTimeUpdate={playback.onVideoTimeUpdate}
@@ -308,6 +323,7 @@ export default function App(): React.ReactElement {
         floatingSync={playback.floatingSync}
         onFloatingSeek={playback.floatingSeek}
         onFloatingTogglePlay={playback.floatingTogglePlay}
+        posterUrl={videoPosterUrl}
       >
         <div className="flex-1 min-h-0 overflow-hidden relative">
           <AnimatePresence mode="wait">
@@ -329,10 +345,16 @@ export default function App(): React.ReactElement {
       <QueueDrawer
         open={queueOpen}
         onClose={() => setQueueOpen(false)}
-        queue={playback.queue}
+        drawerMode={playback.queueDrawerMode}
+        upNext={playback.drawerUpNext}
+        queued={playback.drawerQueued}
+        stagingItems={playback.drawerStagingItems}
         currentRel={playback.currentRel}
-        onPlayFromIndex={playback.playFromQueueIndex}
-        onRemove={playback.removeFromQueue}
+        onPlayPlaylistIndex={playback.playFromPlaylistIndex}
+        onPlayStagingIndex={playback.playFromStagingIndex}
+        onRemovePlaylistIndex={playback.removeFromPlaylistIndex}
+        onRemoveStagingIndex={playback.removeFromStagingIndex}
+        thumbByRel={libraryThumbByRel}
       />
 
       {/* Settings modal */}

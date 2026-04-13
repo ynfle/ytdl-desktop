@@ -3,6 +3,8 @@ export type LibraryVideo = {
   relPath: string
   mtimeMs: number
   size: number
+  /** yt-dlp sidecar image next to the media file, when present (e.g. same title, .jpg). */
+  thumbRelPath: string | null
 }
 
 /** One row from channels.txt with optional title resolved via yt-dlp (no download). */
@@ -48,11 +50,14 @@ export type ApplePodcastSearchResult = {
 
 /** Persisted playback resume + session (one bucket per resolved data dir in userData). */
 export type PlaybackSpotSession = {
+  /** Legacy: explicit-queue tail only for older readers; renderer restores from `playlist` + `explicitStartIndex`. */
   queue: string[]
   playlist: string[]
   cursor: number
   currentRel: string | null
   playing: boolean
+  /** First index in `playlist` of user-queued items (library “Up next” is `cursor+1..explicitStartIndex-1`). Omitted on old files → treat as `playlist.length`. */
+  explicitStartIndex?: number
 }
 
 export type PlaybackSpotPositionEntry = {

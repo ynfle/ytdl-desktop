@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   FloatingPlayerSyncPayload,
   LibraryVideo,
@@ -77,14 +77,26 @@ function reconcilePlaylist(
   return { playlist: filtered, cursor, currentRel: targetRel }
 }
 
+/** Clamp saved explicit-queue boundary into a valid playlist index. */
+function clampExplicitStartIndex(n: number, playlistLen: number): number {
+  if (!Number.isFinite(n)) return playlistLen
+  return Math.max(0, Math.min(playlistLen, Math.round(n)))
+}
+
 /** Core playback state: video ref, playlist, cursor, resume positions, persistence. */
 export function usePlayback(
   appendLog: (chunk: string) => void,
   library: LibraryVideo[],
   allowSpotSaveRef: React.MutableRefObject<boolean>
 ) {
-  const [queue, setQueue] = useState<string[]>([])
+  /**
+   * Pre-play staging when `playlist` is still empty (single-click add from library before Play).
+   * Once a session has a playlist, further idle adds append on `playlist` instead.
+   */
+  const [stagingQueue, setStagingQueue] = useState<string[]>([])
   const [playlist, setPlaylist] = useState<string[]>([])
+  /** First playlist index of user-queued tail; library “Up next” is strictly before this. */
+  const [explicitStartIndex, setExplicitStartIndex] = useState(0)
   const [cursor, setCursor] = useState(0)
   const [playing, setPlaying] = useState(false)
   /** Mirrors {@link playing} for delete / IPC handlers that must not capture stale render state. */
@@ -93,6 +105,8 @@ export function usePlayback(
   const videoRef = useRef<HTMLVideoElement>(null)
   const playlistRef = useRef<string[]>([])
   const cursorRef = useRef(0)
+  const explicitStartIndexRef = useRef(0)
+  const stagingQueueRef = useRef<string[]>([])
   const currentRelRef = useRef<string | null>(null)
   const positionsRef = useRef<Record<string, number>>({})
   /** Wall time of last `patchPlaybackSpot` for resume position (throttle during play). */
@@ -147,25 +161,17 @@ export function usePlayback(
     playingRef.current = playing
   }, [playing])
 
-  /**
-   * While playing, the drawer queue is always current + upcoming (`playlist.slice(cursor)`).
-   * While not playing, `queue` is staging from library clicks only.
-   */
   useEffect(() => {
-    if (!playing) return
-    const upcoming = playlist.slice(cursor)
-    setQueue(upcoming)
-    console.log('[usePlayback] queue synced to current+upcoming', {
-      cursor,
-      playlistLen: playlist.length,
-      queueLen: upcoming.length
-    })
-  }, [playing, playlist, cursor])
+    explicitStartIndexRef.current = explicitStartIndex
+  }, [explicitStartIndex])
+
+  useEffect(() => {
+    stagingQueueRef.current = stagingQueue
+  }, [stagingQueue])
 
   /** Restore session from a hydrated snapshot (called once per data-root). */
   const restoreFromSnapshot = useCallback(
     (snapshot: PlaybackSpotSnapshot, validPaths: Set<string>) => {
-      const queueF = snapshot.session.queue.filter((p) => validPaths.has(p))
       const { playlist: pl, cursor: cur, currentRel: cr } = reconcilePlaylist(
         snapshot.session.playlist,
         snapshot.session.cursor,
@@ -176,22 +182,27 @@ export function usePlayback(
           .filter(([k]) => validPaths.has(k))
           .map(([k, v]) => [k, v.currentTime])
       )
-      /** Older snapshots could save an empty `queue` while `playlist` + `cursor` still describe resume. */
-      let nextQueue = queueF
-      if (queueF.length === 0 && pl.length > 0 && cur >= 0 && cur < pl.length) {
-        nextQueue = pl.slice(cur)
-        console.log('[usePlayback] restore: empty saved queue — using playlist.slice(cursor) for drawer', {
-          cursor: cur,
-          len: nextQueue.length
+      const rawEs = snapshot.session.explicitStartIndex
+      let nextEs =
+        typeof rawEs === 'number' && Number.isFinite(rawEs)
+          ? clampExplicitStartIndex(rawEs, pl.length)
+          : pl.length
+      /** Legacy files: no explicit boundary — entire playlist is library/autoplay context. */
+      if (rawEs == null) {
+        nextEs = pl.length
+        console.log('[usePlayback] restore: legacy session — explicitStartIndex := playlist.length', {
+          plLen: pl.length
         })
       }
-      setQueue(nextQueue)
+      setStagingQueue([])
       setPlaylist(pl)
       setCursor(cur)
+      setExplicitStartIndex(nextEs)
       setCurrentRel(cr)
       setPlaying(false)
       console.log('[usePlayback] restored session from snapshot', {
-        positionKeys: Object.keys(positionsRef.current).length
+        positionKeys: Object.keys(positionsRef.current).length,
+        explicitStartIndex: nextEs
       })
       appendLog('[ui] playback spot restored from disk\n')
     },
@@ -489,12 +500,26 @@ export function usePlayback(
   useEffect(() => {
     if (!allowSpotSaveRef.current) return
     const t = setTimeout(() => {
+      const es = clampExplicitStartIndex(explicitStartIndex, playlist.length)
+      const explicitTail = playlist.slice(es)
       void window.ytdl.patchPlaybackSpot({
-        session: { queue, playlist, cursor, currentRel, playing }
+        session: {
+          queue: explicitTail,
+          playlist,
+          cursor,
+          currentRel,
+          playing,
+          explicitStartIndex: es
+        }
+      })
+      console.log('[usePlayback] patchPlaybackSpot session', {
+        explicitStartIndex: es,
+        explicitTailLen: explicitTail.length,
+        playlistLen: playlist.length
       })
     }, 500)
     return () => clearTimeout(t)
-  }, [queue, playlist, cursor, currentRel, playing, allowSpotSaveRef])
+  }, [explicitStartIndex, playlist, cursor, currentRel, playing, allowSpotSaveRef])
 
   /** Paused preview: show last restored track + resume frame without autoplay. */
   useEffect(() => {
@@ -545,46 +570,103 @@ export function usePlayback(
       console.log('[usePlayback] addToQueue while playing → appended to playlist tail', { relPath })
       return
     }
-    setQueue((q) => (q.includes(relPath) ? q : [...q, relPath]))
+    if (playlistRef.current.length === 0) {
+      setStagingQueue((q) => (q.includes(relPath) ? q : [...q, relPath]))
+      console.log('[usePlayback] addToQueue idle (staging) → appended', { relPath })
+      return
+    }
+    setPlaylist((pl) => {
+      const c = cursorRef.current
+      const rest = pl.slice(c)
+      if (rest.includes(relPath)) return pl
+      return [...pl, relPath]
+    })
+    console.log('[usePlayback] addToQueue idle → appended to playlist tail', { relPath })
   }, [])
 
-  /** Queue > restored session > full library (newest first). */
+  /** Staging / restored playlist / full library (newest first). */
   const startPreferredPlaylist = useCallback(() => {
-    if (queue.length > 0) {
-      setPlaylist([...queue])
+    if (stagingQueueRef.current.length > 0 && playlistRef.current.length === 0) {
+      const sq = [...stagingQueueRef.current]
+      setPlaylist(sq)
+      setExplicitStartIndex(0)
+      setStagingQueue([])
       setCursor(0)
       setPlaying(true)
+      console.log('[usePlayback] startPreferredPlaylist from staging', { len: sq.length })
       return
     }
     if (playlist.length > 0) {
       setPlaying(true)
+      console.log('[usePlayback] startPreferredPlaylist resume existing playlist')
       return
     }
     const pl = library.map((x) => x.relPath)
-    if (pl.length === 0) { appendLog('[ui] nothing to play\n'); return }
+    if (pl.length === 0) {
+      appendLog('[ui] nothing to play\n')
+      return
+    }
     setPlaylist(pl)
+    setExplicitStartIndex(pl.length)
     setCursor(0)
     setPlaying(true)
-  }, [queue, playlist, library, appendLog])
+    console.log('[usePlayback] startPreferredPlaylist full library', { len: pl.length })
+  }, [playlist.length, library, appendLog])
 
-  const playFromQueueIndex = useCallback((index: number) => {
-    if (index < 0 || index >= queue.length) return
-    const slice = queue.slice(index)
-    setPlaylist(slice)
-    setQueue(slice)
+  /** Jump to `playlist[p]` as the new current track; truncate earlier entries; preserve explicit boundary. */
+  const playFromPlaylistIndex = useCallback((p: number) => {
+    const pl = playlistRef.current
+    const E = explicitStartIndexRef.current
+    if (p < 0 || p >= pl.length) {
+      console.warn('[usePlayback] playFromPlaylistIndex out of range', { p, len: pl.length })
+      return
+    }
+    const newPl = pl.slice(p)
+    const newE = clampExplicitStartIndex(Math.max(0, E - p), newPl.length)
+    setPlaylist(newPl)
+    setExplicitStartIndex(newE)
     setCursor(0)
     setPlaying(true)
-  }, [queue])
+    console.log('[usePlayback] playFromPlaylistIndex', { p, newPlLen: newPl.length, newE })
+  }, [])
+
+  /** Staging-only drawer: play from row `i` onward. */
+  const playFromStagingIndex = useCallback((i: number) => {
+    const sq = stagingQueueRef.current
+    if (i < 0 || i >= sq.length) {
+      console.warn('[usePlayback] playFromStagingIndex out of range', { i, len: sq.length })
+      return
+    }
+    const slice = sq.slice(i)
+    setPlaylist(slice)
+    setExplicitStartIndex(0)
+    setStagingQueue([])
+    setCursor(0)
+    setPlaying(true)
+    console.log('[usePlayback] playFromStagingIndex', { i, len: slice.length })
+  }, [])
 
   const playFromLibraryRel = useCallback(
     (relPath: string) => {
       const idx = library.findIndex((x) => x.relPath === relPath)
       if (idx < 0) return
-      const pl = library.slice(idx).map((x) => x.relPath)
-      setPlaylist(pl)
-      setQueue(pl)
+      const context = library.slice(idx).map((x) => x.relPath)
+      const playingNow = playingRef.current
+      const tail = playingNow
+        ? playlistRef.current.slice(explicitStartIndexRef.current)
+        : [...playlistRef.current.slice(explicitStartIndexRef.current), ...stagingQueueRef.current]
+      setStagingQueue([])
+      const merged = [...context, ...tail]
+      setPlaylist(merged)
+      setExplicitStartIndex(context.length)
       setCursor(0)
       setPlaying(true)
+      console.log('[usePlayback] playFromLibraryRel', {
+        relPath,
+        contextLen: context.length,
+        tailLen: tail.length,
+        wasPlaying: playingNow
+      })
     },
     [library]
   )
@@ -783,43 +865,56 @@ export function usePlayback(
     }
   }, [flushPositionNow, allowSpotSaveRef, syncRestoreDocumentPip])
 
-  /**
-   * Drawer row index is relative to current+upcoming while playing (`playlist[cursor + index]`).
-   * When not playing, index is into the staging queue only.
-   */
-  const removeFromQueue = useCallback(
-    (index: number) => {
-      if (!playingRef.current) {
-        setQueue((q) => q.filter((_, i) => i !== index))
-        return
-      }
-      const c = cursorRef.current
+  const removeFromStagingIndex = useCallback((idx: number) => {
+    setStagingQueue((q) => q.filter((_, i) => i !== idx))
+    console.log('[usePlayback] removeFromStagingIndex', { idx })
+  }, [])
+
+  /** Remove one row from the in-memory playlist by absolute index (drawer passes this). */
+  const removeFromPlaylistIndex = useCallback(
+    (targetIndex: number) => {
       const pl = playlistRef.current
-      const targetIndex = c + index
+      const c = cursorRef.current
+      const E = explicitStartIndexRef.current
       if (targetIndex < 0 || targetIndex >= pl.length) {
-        console.warn('[usePlayback] removeFromQueue: index out of range', {
-          index,
-          cursor: c,
+        console.warn('[usePlayback] removeFromPlaylistIndex out of range', {
+          targetIndex,
           plLen: pl.length
         })
         return
       }
+      const play = playingRef.current
       const nextPl = pl.filter((_, j) => j !== targetIndex)
       if (nextPl.length === 0) {
-        console.log('[usePlayback] removeFromQueue: playlist exhausted → stop')
+        console.log('[usePlayback] removeFromPlaylistIndex → playlist empty, stop')
         stopPlayback()
         setPlaylist([])
-        setQueue([])
+        setExplicitStartIndex(0)
         setCursor(0)
+        setCurrentRel(null)
         return
       }
+      let newE = E
+      if (targetIndex < E) newE--
+      newE = clampExplicitStartIndex(newE, nextPl.length)
+
+      if (!play) {
+        let newCur = c
+        if (targetIndex < c) newCur = c - 1
+        else if (targetIndex === c) newCur = Math.min(c, nextPl.length - 1)
+        newCur = Math.max(0, Math.min(newCur, nextPl.length - 1))
+        setPlaylist(nextPl)
+        setExplicitStartIndex(newE)
+        setCursor(newCur)
+        setCurrentRel(nextPl[newCur] ?? null)
+        console.log('[usePlayback] removeFromPlaylistIndex idle', { targetIndex, newCur, newE })
+        return
+      }
+
       setPlaylist(nextPl)
+      setExplicitStartIndex(newE)
       setCursor((prev) => (targetIndex < prev ? prev - 1 : prev))
-      console.log('[usePlayback] removeFromQueue while playing', {
-        index,
-        targetIndex,
-        nextLen: nextPl.length
-      })
+      console.log('[usePlayback] removeFromPlaylistIndex playing', { targetIndex, newE })
     },
     [stopPlayback]
   )
@@ -847,10 +942,11 @@ export function usePlayback(
         }
       }
 
-      setQueue((q) => q.filter((p) => p !== deletedRel))
+      setStagingQueue((q) => q.filter((p) => p !== deletedRel))
 
       const pl = playlistRef.current
       const cur = cursorRef.current
+      const oldE = explicitStartIndexRef.current
       const curRel = currentRelRef.current
       const isCurrent = curRel === deletedRel
       const play = playingRef.current
@@ -860,6 +956,12 @@ export function usePlayback(
         cur,
         remainingRels
       )
+
+      const delIdx = pl.indexOf(deletedRel)
+      let newE = oldE
+      if (delIdx >= 0 && delIdx < oldE) newE--
+      setExplicitStartIndex(clampExplicitStartIndex(newE, newPl.length))
+      console.log('[usePlayback] handleLibraryFileDeleted explicit boundary', { oldE, newE, delIdx })
 
       const electron = shouldUseNativePictureInPictureOnly()
       const floatingOn = floatingPlayerActiveRef.current
@@ -1220,20 +1322,57 @@ export function usePlayback(
     }
   }, [currentRel])
 
+  /** Drawer: library-derived upcoming (play order), each row knows its `playlist` index for jump/remove. */
+  const drawerUpNext = useMemo(() => {
+    if (playlist.length === 0) return [] as { relPath: string; playlistIndex: number }[]
+    return playlist
+      .slice(cursor + 1, explicitStartIndex)
+      .map((relPath, i) => ({ relPath, playlistIndex: cursor + 1 + i }))
+  }, [playlist, cursor, explicitStartIndex])
+
+  const drawerQueued = useMemo(() => {
+    if (playlist.length === 0) return [] as { relPath: string; playlistIndex: number }[]
+    return playlist
+      .slice(explicitStartIndex)
+      .map((relPath, i) => ({ relPath, playlistIndex: explicitStartIndex + i }))
+  }, [playlist, explicitStartIndex])
+
+  const drawerStagingItems = useMemo(
+    () => stagingQueue.map((relPath, index) => ({ relPath, index })),
+    [stagingQueue]
+  )
+
+  /** When the only pending items are pre-play staging, the drawer uses staging rows instead of playlist slices. */
+  const queueDrawerMode = useMemo((): 'staging' | 'playlist' => {
+    if (playlist.length === 0 && stagingQueue.length > 0) return 'staging'
+    return 'playlist'
+  }, [playlist.length, stagingQueue.length])
+
+  /** Badge on transport: items after the current track, or staged lines before first play. */
+  const upcomingTransportCount = useMemo(() => {
+    if (playlist.length === 0) return stagingQueue.length
+    return Math.max(0, playlist.length - cursor - 1)
+  }, [playlist.length, cursor, stagingQueue.length])
+
   return {
-    queue,
-    setQueue,
     playlist,
     cursor,
     playing,
     currentRel,
     videoRef,
+    drawerUpNext,
+    drawerQueued,
+    drawerStagingItems,
+    queueDrawerMode,
+    upcomingTransportCount,
     restoreFromSnapshot,
     mergePositionsFromSnapshot,
     addToQueue,
-    removeFromQueue,
+    removeFromPlaylistIndex,
+    removeFromStagingIndex,
     startPreferredPlaylist,
-    playFromQueueIndex,
+    playFromPlaylistIndex,
+    playFromStagingIndex,
     playFromLibraryRel,
     enterPip,
     stopPlayback,

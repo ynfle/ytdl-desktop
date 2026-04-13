@@ -77,6 +77,8 @@ export type PlayerProps = {
   /** Route transport to floating `<video>` via IPC. */
   onFloatingSeek: (t: number) => void
   onFloatingTogglePlay: () => void
+  /** Loopback URL for sidecar thumbnail (inline `<video>` poster until frames decode). */
+  posterUrl: string | null
 }
 
 /** Format seconds to mm:ss or hh:mm:ss. */
@@ -110,7 +112,8 @@ function usePlayerChrome({
   floatingPlayerActive,
   floatingSync,
   onFloatingSeek,
-  onFloatingTogglePlay
+  onFloatingTogglePlay,
+  posterUrl
 }: PlayerProps): {
   videoPane: React.ReactElement
   transportBar: React.ReactElement
@@ -217,6 +220,7 @@ function usePlayerChrome({
         <video
           ref={videoRef}
           className={showInlineVideo ? 'max-h-full max-w-full object-contain' : 'block h-px w-px'}
+          poster={posterUrl ?? undefined}
           onEnded={onVideoEnded}
           onError={onVideoError}
           onTimeUpdate={handleTimeUpdate}
