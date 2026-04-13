@@ -4,17 +4,46 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Playing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap"
+      rel="stylesheet"
+    />
     <style>
+      :root {
+        --bg: #08080a;
+        --surface: #0f0f13;
+        --surface-raised: #16161c;
+        --border: rgba(255, 255, 255, 0.06);
+        --border-bright: rgba(255, 255, 255, 0.12);
+        --text: #ede9e3;
+        --text-secondary: #9e9690;
+        --text-muted: #5c5650;
+        --accent: #e8a849;
+        --accent-hover: #f0bd60;
+        --accent-glow: rgba(232, 168, 73, 0.15);
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+
       body {
-        margin: 0;
-        background: #0a0a0a;
-        color: #e8e8e8;
-        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
         display: flex;
         flex-direction: column;
         height: 100vh;
         overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
+
+      ::selection {
+        background: rgba(232, 168, 73, 0.25);
+        color: var(--text);
+      }
+
       .video-wrap {
         flex: 1;
         min-height: 0;
@@ -22,28 +51,37 @@
         align-items: center;
         justify-content: center;
         background: #000;
+        position: relative;
       }
+
       video {
         width: 100%;
         height: 100%;
         max-height: 100%;
         object-fit: contain;
       }
+
+      /* ── Controls chrome ── */
       .controls {
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
-        background: #141414;
-        border-top: 1px solid #2a2a2a;
+        background: linear-gradient(180deg, rgba(15, 15, 19, 0.85) 0%, rgba(8, 8, 10, 0.95) 100%);
+        backdrop-filter: blur(20px) saturate(1.4);
+        -webkit-backdrop-filter: blur(20px) saturate(1.4);
+        border-top: 1px solid var(--border);
       }
+
+      /* ── Timeline ── */
       .timeline-row {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 8px 12px 4px;
-        font-size: 11px;
+        padding: 10px 14px 4px;
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 10px;
         font-variant-numeric: tabular-nums;
-        color: #9a9a9a;
+        color: var(--text-muted);
       }
       .timeline-row span.time {
         flex: 0 0 auto;
@@ -56,77 +94,120 @@
       .timeline-row span.time:last-child {
         text-align: left;
       }
-      /* Native range is often nearly invisible on dark Chromium/Electron without explicit track + thumb. */
+
       #timeline {
         flex: 1;
         min-width: 0;
-        height: 28px;
+        height: 4px;
         margin: 0;
         padding: 0;
-        accent-color: #5b9bd5;
         cursor: pointer;
         -webkit-appearance: none;
         appearance: none;
-        background: transparent;
+        background: var(--border-bright);
+        border-radius: 9999px;
+        outline: none;
+        transition: height 120ms ease;
+      }
+      #timeline:hover {
+        height: 6px;
       }
       #timeline::-webkit-slider-runnable-track {
-        height: 6px;
-        border-radius: 3px;
-        background: #3a3a3a;
+        height: 100%;
+        border-radius: 9999px;
+        background: transparent;
       }
       #timeline::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
         width: 14px;
         height: 14px;
-        margin-top: -4px;
+        margin-top: -5px;
         border-radius: 50%;
-        background: #e8e8e8;
-        border: 2px solid #5b9bd5;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+        background: var(--accent);
+        border: 2px solid var(--bg);
+        box-shadow: 0 0 0 2px rgba(232, 168, 73, 0.25), 0 2px 6px rgba(0, 0, 0, 0.4);
+        cursor: pointer;
+        transition: transform 150ms ease, box-shadow 150ms ease;
+      }
+      #timeline::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+        box-shadow: 0 0 0 3px rgba(232, 168, 73, 0.3), 0 2px 8px rgba(0, 0, 0, 0.5);
       }
       #timeline::-moz-range-track {
-        height: 6px;
-        border-radius: 3px;
-        background: #3a3a3a;
+        height: 4px;
+        border-radius: 9999px;
+        background: var(--border-bright);
         border: none;
       }
       #timeline::-moz-range-progress {
-        height: 6px;
-        border-radius: 3px;
-        background: #5b9bd5;
+        height: 4px;
+        border-radius: 9999px;
+        background: var(--accent);
       }
       #timeline::-moz-range-thumb {
         width: 14px;
         height: 14px;
         border-radius: 50%;
-        background: #e8e8e8;
-        border: 2px solid #5b9bd5;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+        background: var(--accent);
+        border: 2px solid var(--bg);
+        box-shadow: 0 0 0 2px rgba(232, 168, 73, 0.25), 0 2px 6px rgba(0, 0, 0, 0.4);
       }
       #timeline:disabled {
-        opacity: 0.45;
+        opacity: 0.3;
         cursor: not-allowed;
       }
+
+      /* ── Buttons bar ── */
       .bar {
         flex-shrink: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 8px;
-        padding: 6px 10px 10px;
+        gap: 6px;
+        padding: 6px 14px 12px;
       }
+
       button {
-        padding: 8px 14px;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        font-size: 12px;
+        font-weight: 500;
+        padding: 7px 16px;
         border-radius: 8px;
-        border: 1px solid #3a3a3a;
-        background: #222;
-        color: #eee;
+        border: 1px solid var(--border-bright);
+        background: var(--surface-raised);
+        color: var(--text-secondary);
         cursor: pointer;
-        font-size: 13px;
+        transition: all 150ms ease;
+        letter-spacing: 0.01em;
       }
       button:hover {
-        background: #2e2e2e;
+        background: var(--surface-raised);
+        border-color: rgba(255, 255, 255, 0.16);
+        color: var(--text);
+      }
+      button:active {
+        transform: scale(0.97);
+      }
+
+      /* Play button accent style */
+      #bPlay {
+        background: linear-gradient(135deg, #e8a849 0%, #d4893a 100%);
+        border: none;
+        color: var(--bg);
+        font-weight: 600;
+        padding: 7px 22px;
+        box-shadow: 0 2px 10px rgba(232, 168, 73, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      }
+      #bPlay:hover {
+        color: var(--bg);
+        box-shadow: 0 2px 14px rgba(232, 168, 73, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      }
+
+      /* Close button subtle danger tint on hover */
+      #bClose:hover {
+        border-color: rgba(232, 85, 85, 0.3);
+        color: #e85555;
       }
     </style>
   </head>
@@ -141,7 +222,7 @@
         <span class="time" id="tDur">0:00</span>
       </div>
       <div class="bar">
-        <button type="button" id="bBack" title="Seek back 10 seconds">−10s</button>
+        <button type="button" id="bBack" title="Seek back 10 seconds">&minus;10s</button>
         <button type="button" id="bPlay" title="Play / Pause">Play</button>
         <button type="button" id="bFwd" title="Seek forward 10 seconds">+10s</button>
         <button type="button" id="bClose" title="Close">Close</button>
@@ -180,6 +261,18 @@
           return d > 0 && isFinite(d)
         }
 
+        /** Update timeline fill gradient to show progress. */
+        function updateTimelineFill() {
+          if (!durationUsable()) {
+            timeline.style.background = 'var(--border-bright)'
+            return
+          }
+          var pct = (parseFloat(timeline.value) / parseFloat(timeline.max)) * 100
+          if (!isFinite(pct)) pct = 0
+          timeline.style.background =
+            'linear-gradient(to right, var(--accent) ' + pct + '%, var(--border-bright) ' + pct + '%)'
+        }
+
         /** Sync timeline labels + range from `<video>` (skipped during scrub). */
         function refreshTimelineFromVideo() {
           if (scrubbing) return
@@ -194,7 +287,8 @@
             timeline.value = '0'
           }
           tCur.textContent = formatTime(v.currentTime)
-          tDur.textContent = ok ? formatTime(d) : '—'
+          tDur.textContent = ok ? formatTime(d) : '\u2014'
+          updateTimelineFill()
         }
 
         function beginScrub() {
@@ -241,6 +335,7 @@
           if (!isFinite(t)) return
           v.currentTime = Math.min(Math.max(0, t), v.duration)
           tCur.textContent = formatTime(v.currentTime)
+          updateTimelineFill()
         })
         timeline.addEventListener('change', function () {
           endScrub()

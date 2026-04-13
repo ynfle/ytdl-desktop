@@ -2,18 +2,18 @@ import { type ReactNode, useMemo } from 'react'
 import { motion } from 'motion/react'
 import { Loader2, RefreshCw } from 'lucide-react'
 
-/** Shared Tailwind for Channels / Podcasts “Look up” rows and metadata toolbars. */
+/** Shared Tailwind for Channels / Podcasts "Look up" rows and metadata toolbars. */
 export const subPageLookUpInputClass =
-  'flex-1 min-w-[200px] text-sm px-3 py-2 rounded-lg border border-border bg-bg text-text placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50'
+  'flex-1 min-w-[200px] text-sm px-3 py-2 rounded-lg border border-border bg-bg text-text placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/30 disabled:opacity-50 transition-all duration-150'
 
 export const subPageLookUpButtonClass =
-  'inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-border bg-bg text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+  'inline-flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-lg border border-border bg-surface-raised text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150'
 
 export const subPageToolbarBtnNeutralClass =
-  'inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-surface-raised text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+  'inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-surface-raised text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150'
 
 export const subPageToolbarBtnAccentClass =
-  'inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-accent-dim text-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+  'inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-accent/20 text-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150'
 
 /**
  * Same busy rules as main-process gates: sync + cross-type metadata resolve + add preview flows.
@@ -122,7 +122,7 @@ export function SubscriptionMetadataToolbar({
         disabled={anyBusy}
         className={subPageToolbarBtnNeutralClass}
       >
-        <RefreshCw size={13} />
+        <RefreshCw size={12} />
         Reload list
       </button>
       <button
@@ -142,12 +142,12 @@ export function SubscriptionMetadataToolbar({
       >
         Refetch all
       </button>
-      <span className="text-[11px] text-text-muted ml-auto">{statusHint}</span>
+      <span className="text-[10px] text-text-muted ml-auto font-mono">{statusHint}</span>
     </div>
   )
 }
 
-/** Default spinner for toolbar “fetch” busy state (13px to match icons). */
+/** Default spinner for toolbar "fetch" busy state (12px to match icons). */
 export function subscriptionToolbarFetchSpinner(): React.ReactElement {
-  return <Loader2 size={13} className="animate-spin" />
+  return <Loader2 size={12} className="animate-spin" />
 }

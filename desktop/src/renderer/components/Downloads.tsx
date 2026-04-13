@@ -16,6 +16,51 @@ type Props = {
   onRunPodcasts: () => void
 }
 
+type ActionCardProps = {
+  icon: React.ReactNode
+  title: string
+  description: string
+  disabled: boolean
+  onClick: () => void
+  /** Optional extra content in the top-right area. */
+  topRight?: React.ReactNode
+  /** Stagger delay for entrance animation. */
+  delay: number
+}
+
+/** Individual download action card with hover shimmer. */
+function ActionCard({ icon, title, description, disabled, onClick, topRight, delay }: ActionCardProps) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay, ease: [0.22, 0.61, 0.36, 1] }}
+      whileHover={disabled ? undefined : { y: -1 }}
+      whileTap={disabled ? undefined : { scale: 0.98 }}
+      disabled={disabled}
+      onClick={onClick}
+      className="card-interactive flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface disabled:opacity-35 disabled:cursor-not-allowed text-left"
+    >
+      <div className="flex items-center justify-between w-full">
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center"
+          style={{
+            background: 'linear-gradient(135deg, rgba(232, 168, 73, 0.12) 0%, rgba(232, 168, 73, 0.04) 100%)',
+            boxShadow: 'inset 0 1px 0 rgba(232, 168, 73, 0.08)'
+          }}
+        >
+          {icon}
+        </div>
+        {topRight}
+      </div>
+      <div>
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-[11px] text-text-muted mt-1 leading-relaxed">{description}</p>
+      </div>
+    </motion.button>
+  )
+}
+
 /** Downloads page: action cards for channel sync + ytrec, with live log terminal. */
 export default function DownloadsPage({
   busy,
@@ -44,11 +89,11 @@ export default function DownloadsPage({
       {/* Header */}
       <div className="px-6 py-4 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold">Downloads</h1>
+          <h1 className="text-lg font-bold tracking-tight">Downloads</h1>
           {busy && (
             <span className="inline-flex items-center gap-1.5 text-xs text-accent">
-              <Loader2 size={13} className="animate-spin" />
-              Syncing…
+              <Loader2 size={12} className="animate-spin" />
+              <span className="font-medium">Syncing</span>
             </span>
           )}
         </div>
@@ -56,101 +101,65 @@ export default function DownloadsPage({
 
       {/* Action cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 px-6 py-4 shrink-0">
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
+        <ActionCard
+          icon={<Download size={17} className="text-accent" />}
+          title="Download Channels"
+          description="Fetch from channels.txt only (latest 10 per channel, shared downloaded.txt)"
           disabled={anyBusy}
           onClick={onRunChannels}
-          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
-        >
-          <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
-            <Download size={18} className="text-accent" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Download Channels</p>
-            <p className="text-[11px] text-text-muted mt-0.5">
-              Fetch from channels.txt only (latest 10 per channel, shared downloaded.txt)
-            </p>
-          </div>
-        </motion.button>
+          delay={0}
+        />
 
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
+        <ActionCard
+          icon={<ListVideo size={17} className="text-accent" />}
+          title="Download Playlists"
+          description="Fetch from playlists.txt only (same archive and folder layout as channels)"
           disabled={anyBusy}
           onClick={onRunPlaylists}
-          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
-        >
-          <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
-            <ListVideo size={18} className="text-accent" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Download Playlists</p>
-            <p className="text-[11px] text-text-muted mt-0.5">
-              Fetch from playlists.txt only (same archive and folder layout as channels)
-            </p>
-          </div>
-        </motion.button>
+          delay={0.04}
+        />
 
-        {/* Ytrec card */}
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
+        {/* Ytrec card with count input */}
+        <ActionCard
+          icon={<Tv size={17} className="text-accent" />}
+          title="Download Recommendations"
+          description="Fetch YouTube recommended feed (ytrec)"
           disabled={anyBusy}
           onClick={onRunYtrec}
-          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
-        >
-          <div className="flex items-center justify-between w-full">
-            <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
-              <Tv size={18} className="text-accent" />
-            </div>
-            {/* Count input */}
+          delay={0.08}
+          topRight={
             <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              <label className="text-[11px] text-text-muted">count</label>
+              <label className="text-[10px] text-text-muted font-medium">count</label>
               <input
                 type="number"
                 min={1}
                 value={ytrecCount}
                 onChange={(e) => onYtrecCountChange(Math.max(1, Number(e.target.value) || 1))}
-                className="w-14 px-2 py-1 text-xs rounded-md border border-border bg-bg text-text text-center"
+                className="w-14 px-2 py-1 text-xs rounded-md border border-border bg-bg text-text text-center font-mono"
               />
             </div>
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Download Recommendations</p>
-            <p className="text-[11px] text-text-muted mt-0.5">
-              Fetch YouTube recommended feed (ytrec)
-            </p>
-          </div>
-        </motion.button>
+          }
+        />
 
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
+        <ActionCard
+          icon={<Mic2 size={17} className="text-accent" />}
+          title="Download Podcasts"
+          description="Fetch latest episodes from podcasts.txt (RSS, audio)"
           disabled={anyBusy}
           onClick={onRunPodcasts}
-          className="flex flex-col items-start gap-3 p-4 rounded-xl border border-border bg-surface hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
-        >
-          <div className="w-9 h-9 rounded-lg bg-accent-dim flex items-center justify-center">
-            <Mic2 size={18} className="text-accent" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Download Podcasts</p>
-            <p className="text-[11px] text-text-muted mt-0.5">
-              Fetch latest episodes from podcasts.txt (RSS, audio)
-            </p>
-          </div>
-        </motion.button>
+          delay={0.12}
+        />
       </div>
 
       {/* Log terminal */}
       <div className="flex-1 flex flex-col min-h-0 mx-6 mb-4 rounded-xl border border-border bg-bg overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-surface">
-          <Terminal size={13} className="text-text-muted" />
-          <span className="text-[11px] text-text-muted font-medium">Output</span>
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-surface/80 backdrop-blur-sm">
+          <Terminal size={12} className="text-text-muted" />
+          <span className="text-[10px] text-text-muted font-semibold uppercase tracking-wider">Output</span>
+          {busy && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent pulse-accent" />}
         </div>
-        <pre ref={logRef} className="log-terminal flex-1 overflow-auto p-3 text-text-secondary">
-          {log || 'Waiting for sync…'}
+        <pre ref={logRef} className="log-terminal flex-1 overflow-auto p-4 text-text-secondary">
+          {log || 'Waiting for sync\u2026'}
         </pre>
       </div>
     </div>

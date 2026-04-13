@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'motion/react'
 import { ExternalLink, Loader2, Mic2, Search, Trash2 } from 'lucide-react'
 import type { ApplePodcastSearchResult, PodcastInfoRow } from '../../../shared/ytdl-api'
+import { ChannelAvatar } from './ChannelAvatar'
 import {
   SubscriptionMetadataToolbar,
   SubscriptionResolveProgressBar,
@@ -25,7 +26,7 @@ type AddPodcastBarProps = {
   onOpenUrl: (url: string) => void
 }
 
-/** Paste RSS or Apple Podcasts link → Look up → confirm → Add. */
+/** Paste RSS or Apple Podcasts link -> Look up -> confirm -> Add. */
 function AddPodcastBar({
   addPreview,
   addPreviewLoading,
@@ -43,11 +44,12 @@ function AddPodcastBar({
     interactionLocked || addPreviewLoading || addConfirmBusy || !rawInput.trim()
 
   return (
-    <div className="rounded-lg border border-border bg-surface-raised p-3 space-y-3">
+    <div className="rounded-xl border border-border bg-surface-raised/60 p-4 space-y-3">
       <p className="text-[11px] text-text-muted leading-relaxed">
-        Add a podcast: paste an <strong>https://</strong> RSS feed URL or a{' '}
-        <span className="font-mono">podcasts.apple.com/…/id…</span> link. <strong>Look up</strong>{' '}
-        loads the title and cover art before saving to <code className="font-mono">podcasts.txt</code>.
+        Add a podcast: paste an <strong className="text-text-secondary">https://</strong> RSS feed URL or a{' '}
+        <span className="font-mono text-text-secondary">podcasts.apple.com/&hellip;/id&hellip;</span> link.{' '}
+        <strong className="text-text-secondary">Look up</strong> loads the title and cover art before saving to{' '}
+        <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">podcasts.txt</code>.
       </p>
       <div className="flex flex-wrap gap-2 items-center">
         <input
@@ -71,31 +73,24 @@ function AddPodcastBar({
           disabled={lookUpDisabled}
           className={subPageLookUpButtonClass}
         >
-          {addPreviewLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+          {addPreviewLoading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
           Look up
         </button>
       </div>
       {addFormError ? <p className="text-[11px] text-danger">{addFormError}</p> : null}
 
       {addPreview ? (
-        <div className="flex flex-wrap gap-4 items-center border-t border-border pt-3 mt-1">
-          {addPreview.row.logoUrl ? (
-            <img
-              src={addPreview.row.logoUrl}
-              alt=""
-              width={64}
-              height={64}
-              className="w-16 h-16 rounded-lg object-cover border border-border shrink-0"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-lg bg-surface-overlay border border-border shrink-0 flex items-center justify-center text-text-muted">
-              <Mic2 size={28} />
-            </div>
-          )}
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="flex flex-wrap gap-4 items-center border-t border-border pt-4 mt-1"
+        >
+          <ChannelAvatar src={addPreview.row.logoUrl} name={addPreview.row.displayName} size="lg" />
           <div className="flex-1 min-w-0 space-y-1">
             <p className="text-sm font-semibold text-text">{addPreview.row.displayName}</p>
             <p
-              className="text-xs font-mono text-text-muted truncate"
+              className="text-[11px] font-mono text-text-muted truncate"
               title={addPreview.feedUrl}
             >
               {addPreview.feedUrl}
@@ -104,7 +99,7 @@ function AddPodcastBar({
               <button
                 type="button"
                 onClick={() => onOpenUrl(addPreview.feedUrl)}
-                className="text-[11px] text-accent hover:underline"
+                className="text-[11px] text-accent hover:text-accent-hover hover:underline transition-colors"
               >
                 Open feed
               </button>
@@ -115,21 +110,25 @@ function AddPodcastBar({
               type="button"
               onClick={() => void onConfirmAdd()}
               disabled={interactionLocked || addConfirmBusy}
-              className="text-xs font-medium px-3 py-2 rounded-lg bg-accent text-bg hover:opacity-90 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg text-bg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              style={{
+                background: 'linear-gradient(135deg, #e8a849 0%, #d4893a 100%)',
+                boxShadow: '0 2px 8px rgba(232, 168, 73, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
+              }}
             >
-              {addConfirmBusy ? <Loader2 size={14} className="animate-spin inline" /> : null}
+              {addConfirmBusy ? <Loader2 size={13} className="animate-spin" /> : null}
               Add to podcasts.txt
             </button>
             <button
               type="button"
               onClick={onCancelPreview}
               disabled={addConfirmBusy}
-              className="text-xs px-3 py-2 rounded-lg border border-border text-text-secondary hover:text-text"
+              className="text-xs font-medium px-3.5 py-2 rounded-lg border border-border text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               Back
             </button>
           </div>
-        </div>
+        </motion.div>
       ) : null}
     </div>
   )
@@ -232,15 +231,15 @@ export default function PodcastsPage({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-6 py-4 border-b border-border shrink-0 space-y-3">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold">Podcasts</h1>
-          <span className="text-xs font-mono text-text-muted bg-surface-raised px-2 py-0.5 rounded-full">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold tracking-tight">Podcasts</h1>
+          <span className="section-pill">
             {rows.length} show{rows.length === 1 ? '' : 's'}
           </span>
         </div>
 
         {/* Apple search */}
-        <div className="rounded-lg border border-border bg-surface-raised p-3 space-y-2">
+        <div className="rounded-xl border border-border bg-surface-raised/60 p-4 space-y-2.5">
           <p className="text-[11px] text-text-muted">
             Search Apple Podcasts (iTunes catalog). Pick a show to preview and add.
           </p>
@@ -256,7 +255,7 @@ export default function PodcastsPage({
                 }
               }}
               disabled={interactionLocked || searchLoading}
-              placeholder="Search podcasts…"
+              placeholder="Search podcasts\u2026"
               className={subPageLookUpInputClass}
             />
             <button
@@ -265,33 +264,23 @@ export default function PodcastsPage({
               onClick={() => onSearch(searchQuery)}
               className={subPageLookUpButtonClass}
             >
-              {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+              {searchLoading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
               Search
             </button>
           </div>
           {searchError ? <p className="text-[11px] text-danger">{searchError}</p> : null}
           {searchResults.length > 0 ? (
-            <ul className="max-h-40 overflow-y-auto divide-y divide-border border border-border rounded-md mt-2">
+            <ul className="max-h-44 overflow-y-auto divide-y divide-border border border-border rounded-lg mt-2">
               {searchResults.map((hit) => (
                 <li
                   key={hit.collectionId}
-                  className="flex items-center gap-3 px-2 py-2 text-sm hover:bg-surface-overlay/60"
+                  className="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-surface-overlay/40 transition-colors"
                 >
-                  {hit.artworkUrl ? (
-                    <img
-                      src={hit.artworkUrl}
-                      alt=""
-                      width={40}
-                      height={40}
-                      className="w-10 h-10 rounded-md object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-md bg-surface-overlay shrink-0" />
-                  )}
+                  <ChannelAvatar src={hit.artworkUrl} name={hit.title} size="md" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{hit.title}</p>
+                    <p className="font-medium truncate text-sm">{hit.title}</p>
                     {hit.artistName ? (
-                      <p className="text-[11px] text-text-muted truncate">{hit.artistName}</p>
+                      <p className="text-[10px] text-text-muted truncate">{hit.artistName}</p>
                     ) : null}
                   </div>
                   <button
@@ -300,7 +289,7 @@ export default function PodcastsPage({
                     onClick={() =>
                       onLookUpPodcast(hit.feedUrl, { artworkUrl: hit.artworkUrl ?? undefined })
                     }
-                    className="text-[11px] font-medium px-2 py-1 rounded border border-accent-dim text-accent hover:bg-accent-dim shrink-0 disabled:opacity-40"
+                    className="text-[10px] font-semibold px-2.5 py-1 rounded-md border border-accent/20 text-accent hover:bg-accent-dim shrink-0 disabled:opacity-40 transition-all"
                   >
                     Preview
                   </button>
@@ -318,12 +307,12 @@ export default function PodcastsPage({
           onFetch={onFetchMeta}
           onRefetchAll={onRefetchAllMeta}
           fetchBusy={podcastsBusy}
-          fetchIcon={<Mic2 size={13} />}
+          fetchIcon={<Mic2 size={12} />}
           fetchIconBusy={subscriptionToolbarFetchSpinner()}
           fetchLabel="Fetch metadata"
           statusHint={
             podcastsBusy && progress
-              ? `${progress} · parallel yt-dlp`
+              ? `${progress} \u00b7 parallel yt-dlp`
               : 'cache 7d in app userData'
           }
         />
@@ -333,13 +322,23 @@ export default function PodcastsPage({
 
       <div className="flex-1 overflow-y-auto">
         {rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-text-muted px-6 py-8 min-h-[240px]">
+          <div className="flex flex-col items-center justify-center h-full gap-5 text-text-muted px-6 py-8 min-h-[240px]">
             <div className="w-full max-w-lg">{addBar}</div>
-            <Mic2 size={40} strokeWidth={1.2} className="opacity-30" />
-            <p className="text-sm text-center">No podcasts in podcasts.txt yet.</p>
-            <p className="text-[11px] text-center max-w-sm">
-              Search above or paste an RSS / Apple link, then use <strong>Look up</strong>.
-            </p>
+            <div
+              className="w-16 h-16 rounded-xl flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, rgba(232, 168, 73, 0.08) 0%, rgba(232, 168, 73, 0.02) 100%)',
+                border: '1px solid rgba(232, 168, 73, 0.1)'
+              }}
+            >
+              <Mic2 size={28} strokeWidth={1.2} className="text-accent/40" />
+            </div>
+            <div className="text-center space-y-1.5">
+              <p className="text-sm font-medium text-text-secondary">No podcasts in podcasts.txt yet</p>
+              <p className="text-[11px] max-w-sm leading-relaxed">
+                Search above or paste an RSS / Apple link, then use <strong className="text-text-secondary">Look up</strong>.
+              </p>
+            </div>
           </div>
         ) : (
           <table className="channel-table">
@@ -358,32 +357,21 @@ export default function PodcastsPage({
                   key={row.feedUrl || `row-${i}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ duration: 0.15, delay: Math.min(i * 0.02, 0.5) }}
+                  transition={{ duration: 0.2, delay: Math.min(i * 0.02, 0.5) }}
                 >
                   <td className="pl-4 pr-1">
-                    {row.logoUrl ? (
-                      <img
-                        className="w-8 h-8 rounded-md object-cover border border-border"
-                        src={row.logoUrl}
-                        alt=""
-                        width={32}
-                        height={32}
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-md bg-surface-overlay border border-border" />
-                    )}
+                    <ChannelAvatar src={row.logoUrl} name={row.displayName ?? row.feedUrl} size="md" />
                   </td>
                   <td>
                     <span
-                      className="text-xs font-mono truncate block max-w-[220px]"
+                      className="text-[11px] font-mono truncate block max-w-[220px] text-text-secondary"
                       title={row.feedUrl}
                     >
                       {row.feedUrl}
                     </span>
                   </td>
                   <td className="text-sm">
-                    {row.displayName ?? <span className="text-text-muted">--</span>}
+                    {row.displayName ?? <span className="text-text-muted">&mdash;</span>}
                   </td>
                   <td>
                     {row.error ? (
@@ -400,19 +388,19 @@ export default function PodcastsPage({
                       <button
                         type="button"
                         onClick={() => onOpenUrl(row.feedUrl)}
-                        className="p-1.5 rounded-md text-text-muted hover:text-accent hover:bg-accent-dim transition-colors"
+                        className="p-1.5 rounded-md text-text-muted hover:text-accent hover:bg-accent-dim transition-all"
                         title="Open feed"
                       >
-                        <ExternalLink size={13} />
+                        <ExternalLink size={12} />
                       </button>
                       <button
                         type="button"
                         disabled={busy || podcastsBusy}
                         onClick={() => void onRemovePodcast(row.feedUrl)}
-                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40"
+                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all disabled:opacity-40"
                         title="Remove subscription"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={12} />
                       </button>
                     </div>
                   </td>
