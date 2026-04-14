@@ -1,7 +1,6 @@
 import { resolve } from 'path'
 import type { ChannelInfoRow } from '../../shared/ytdl-api'
 import { LOG } from './constants'
-import { channelLogoFilePath, downloadChannelLogo } from './channel-logos'
 import {
   parseYtDlpJsonRecord,
   pickThumbnailUrlByMaxArea,
@@ -80,15 +79,8 @@ export async function resolvePlaylistRow(
       return { row: enriched }
     }
 
-    let avatarUrl: string | undefined
-    if (parsed.thumbUrl) {
-      avatarUrl = parsed.thumbUrl
-      const dest = channelLogoFilePath(root, playlistUrl)
-      const ok = await downloadChannelLogo(parsed.thumbUrl, dest)
-      if (!ok) {
-        console.warn(LOG, 'playlist thumbnail download failed', playlistUrl.slice(0, 48))
-      }
-    }
+    // Thumbnail fetch is delegated to `enrichChannelRowWithLogo` (skips when logo file exists).
+    const avatarUrl = parsed.thumbUrl ?? undefined
 
     const base: ChannelInfoRow = {
       identifier: playlistUrl,

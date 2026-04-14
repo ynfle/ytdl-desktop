@@ -120,9 +120,13 @@ export async function enrichChannelRowWithLogo(
   const filePath = channelLogoFilePath(root, identifier)
   const remote =
     typeof logoSourceUrl === 'string' && logoSourceUrl.length > 0 ? logoSourceUrl : null
-  if (remote && !(await pathExists(filePath))) {
-    console.info(LOG, 'channel logo file missing, re-downloading', identifier)
-    await downloadChannelLogo(remote, filePath)
+  if (remote) {
+    if (await pathExists(filePath)) {
+      console.info(LOG, 'channel logo on disk, skip network fetch', identifier)
+    } else {
+      console.info(LOG, 'channel logo file missing, downloading', identifier)
+      await downloadChannelLogo(remote, filePath)
+    }
   }
   const logoUrl = (await pathExists(filePath)) ? channelLogoLoopbackUrl(identifier) : null
   return { ...row, logoUrl }
@@ -225,14 +229,7 @@ export async function resolveChannelRow(
     return { row: enriched }
   }
 
-  if (avatarUrl) {
-    const dest = channelLogoFilePath(resolve(dataRoot), channel_identifier)
-    const ok = await downloadChannelLogo(avatarUrl, dest)
-    if (!ok) {
-      console.warn(LOG, 'channel logo download failed after name resolve', channel_identifier)
-    }
-  }
-
+  // Logo bytes: only `enrichChannelRowWithLogo` fetches — it skips when `*.avatar` already exists.
   const base: ChannelInfoRow = {
     identifier: channel_identifier,
     videosUrl,
