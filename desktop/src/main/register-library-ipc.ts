@@ -5,6 +5,7 @@ import { getDataDir, isPathInsideRoot } from './config-store'
 import { LIBRARY_MEDIA_EXT, LOG } from './constants'
 import { getMediaAuth } from './media-server'
 import { scanLibraryVideos } from './library-scan'
+import { unlinkSidecarThumbnailsBesideMedia } from './library-thumbnail'
 
 /** `library:scan` — keep registration order: called before channels IPC in bootstrap. */
 export function registerLibraryScanIpc(): void {
@@ -85,6 +86,7 @@ export function registerLibraryDeleteMediaIpc(): void {
         return { ok: false as const, error: 'path not allowed' }
       }
       await fs.unlink(realFull)
+      await unlinkSidecarThumbnailsBesideMedia(root, realFull)
       console.info(LOG, 'library:deleteMedia ok', relPath)
       return { ok: true as const }
     } catch (e) {
