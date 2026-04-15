@@ -7,6 +7,11 @@ import { MediaThumbSlot } from './MediaThumbSlot'
 type PlaylistRow = { relPath: string; playlistIndex: number }
 type StagingRow = { relPath: string; index: number }
 
+type ThumbSlotByRel = ReadonlyMap<
+  string,
+  { thumbRelPath: string | null; fallbackImageUrl: string | null }
+>
+
 type Props = {
   open: boolean
   onClose: () => void
@@ -20,21 +25,23 @@ type Props = {
   onPlayStagingIndex: (index: number) => void
   onRemovePlaylistIndex: (playlistIndex: number) => void
   onRemoveStagingIndex: (index: number) => void
-  thumbByRel: ReadonlyMap<string, string | null>
+  thumbByRel: ThumbSlotByRel
 }
 
 function QueueRow({
   relPath,
   rank,
   isActive,
-  thumbRel,
+  thumbRelPath,
+  fallbackImageUrl,
   onDoubleClick,
   onRemove
 }: {
   relPath: string
   rank: number
   isActive: boolean
-  thumbRel: string | null
+  thumbRelPath: string | null
+  fallbackImageUrl: string | null
   onDoubleClick: () => void
   onRemove: () => void
 }): ReactElement {
@@ -52,7 +59,8 @@ function QueueRow({
       onDoubleClick={onDoubleClick}
     >
       <MediaThumbSlot
-        thumbRelPath={thumbRel}
+        thumbRelPath={thumbRelPath}
+        fallbackImageUrl={fallbackImageUrl}
         widthClassName="w-16"
         isActive={isActive}
       />
@@ -173,17 +181,24 @@ export default function QueueDrawer({
                 <div>
                   <SectionLabel label="Queue" extra={`${stagingItems.length} item${stagingItems.length !== 1 ? 's' : ''}`} />
                   <ul>
-                    {stagingItems.map((row, si) => (
-                      <QueueRow
-                        key={`st-${row.relPath}-${row.index}`}
-                        relPath={row.relPath}
-                        rank={si + 1}
-                        isActive={row.relPath === currentRel}
-                        thumbRel={thumbByRel.get(row.relPath) ?? null}
-                        onDoubleClick={() => onPlayStagingIndex(row.index)}
-                        onRemove={() => onRemoveStagingIndex(row.index)}
-                      />
-                    ))}
+                    {stagingItems.map((row, si) => {
+                      const slot = thumbByRel.get(row.relPath) ?? {
+                        thumbRelPath: null,
+                        fallbackImageUrl: null
+                      }
+                      return (
+                        <QueueRow
+                          key={`st-${row.relPath}-${row.index}`}
+                          relPath={row.relPath}
+                          rank={si + 1}
+                          isActive={row.relPath === currentRel}
+                          thumbRelPath={slot.thumbRelPath}
+                          fallbackImageUrl={slot.fallbackImageUrl}
+                          onDoubleClick={() => onPlayStagingIndex(row.index)}
+                          onRemove={() => onRemoveStagingIndex(row.index)}
+                        />
+                      )
+                    })}
                   </ul>
                 </div>
               ) : (
@@ -192,17 +207,24 @@ export default function QueueDrawer({
                     <>
                       <SectionLabel label="Queue" extra={`${queued.length}`} />
                       <ul>
-                        {queued.map((row, i) => (
-                          <QueueRow
-                            key={`q-${row.relPath}-${row.playlistIndex}`}
-                            relPath={row.relPath}
-                            rank={i + 1}
-                            isActive={row.relPath === currentRel}
-                            thumbRel={thumbByRel.get(row.relPath) ?? null}
-                            onDoubleClick={() => onPlayPlaylistIndex(row.playlistIndex)}
-                            onRemove={() => onRemovePlaylistIndex(row.playlistIndex)}
-                          />
-                        ))}
+                        {queued.map((row, i) => {
+                          const slot = thumbByRel.get(row.relPath) ?? {
+                            thumbRelPath: null,
+                            fallbackImageUrl: null
+                          }
+                          return (
+                            <QueueRow
+                              key={`q-${row.relPath}-${row.playlistIndex}`}
+                              relPath={row.relPath}
+                              rank={i + 1}
+                              isActive={row.relPath === currentRel}
+                              thumbRelPath={slot.thumbRelPath}
+                              fallbackImageUrl={slot.fallbackImageUrl}
+                              onDoubleClick={() => onPlayPlaylistIndex(row.playlistIndex)}
+                              onRemove={() => onRemovePlaylistIndex(row.playlistIndex)}
+                            />
+                          )
+                        })}
                       </ul>
                     </>
                   )}
@@ -214,17 +236,24 @@ export default function QueueDrawer({
                     <p className="px-4 py-4 text-[11px] text-text-muted">No upcoming videos from the library</p>
                   ) : (
                     <ul>
-                      {upNext.map((row, i) => (
-                        <QueueRow
-                          key={`up-${row.relPath}-${row.playlistIndex}`}
-                          relPath={row.relPath}
-                          rank={i + 1}
-                          isActive={row.relPath === currentRel}
-                          thumbRel={thumbByRel.get(row.relPath) ?? null}
-                          onDoubleClick={() => onPlayPlaylistIndex(row.playlistIndex)}
-                          onRemove={() => onRemovePlaylistIndex(row.playlistIndex)}
-                        />
-                      ))}
+                      {upNext.map((row, i) => {
+                        const slot = thumbByRel.get(row.relPath) ?? {
+                          thumbRelPath: null,
+                          fallbackImageUrl: null
+                        }
+                        return (
+                          <QueueRow
+                            key={`up-${row.relPath}-${row.playlistIndex}`}
+                            relPath={row.relPath}
+                            rank={i + 1}
+                            isActive={row.relPath === currentRel}
+                            thumbRelPath={slot.thumbRelPath}
+                            fallbackImageUrl={slot.fallbackImageUrl}
+                            onDoubleClick={() => onPlayPlaylistIndex(row.playlistIndex)}
+                            onRemove={() => onRemovePlaylistIndex(row.playlistIndex)}
+                          />
+                        )
+                      })}
                     </ul>
                   )}
                 </>

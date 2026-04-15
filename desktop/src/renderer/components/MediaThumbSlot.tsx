@@ -4,6 +4,11 @@ import { useLoopbackMediaUrl } from '../hooks/useLoopbackMediaUrl'
 type Props = {
   /** Library scan sidecar path under data root, or null for placeholder only. */
   thumbRelPath: string | null
+  /**
+   * Direct image URL when there is no sidecar (e.g. loopback show/channel artwork).
+   * Used after loopback resolution for `thumbRelPath` fails or when it is null.
+   */
+  fallbackImageUrl?: string | null
   /** Tailwind width class for the container (height = width * 9/16). */
   widthClassName: string
   /** Show a play overlay glyph on hover. */
@@ -18,11 +23,13 @@ type Props = {
  */
 export function MediaThumbSlot({
   thumbRelPath,
+  fallbackImageUrl = null,
   widthClassName,
   showPlayOverlay = false,
   isActive = false
 }: Props) {
-  const url = useLoopbackMediaUrl(thumbRelPath)
+  const loopbackUrl = useLoopbackMediaUrl(thumbRelPath)
+  const url = loopbackUrl ?? (fallbackImageUrl && fallbackImageUrl.length > 0 ? fallbackImageUrl : null)
 
   return (
     <div

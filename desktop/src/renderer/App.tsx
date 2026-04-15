@@ -44,13 +44,16 @@ export default function App(): React.ReactElement {
   const lib = useLibrary(sync.appendLog, dataDir, channels.channelRows, podcasts.podcastRows)
   const playback = usePlayback(sync.appendLog, lib.library, lib.allowSpotSaveRef, podcasts.podcastRows)
 
+  /** Per-file sidecar thumb + group logo (podcast show / channel avatar) for queue rows. */
   const libraryThumbByRel = useMemo(() => {
-    const m = new Map<string, string | null>()
-    for (const v of lib.library) {
-      m.set(v.relPath, v.thumbRelPath)
+    const m = new Map<string, { thumbRelPath: string | null; fallbackImageUrl: string | null }>()
+    for (const g of lib.libraryGroups) {
+      for (const item of g.items) {
+        m.set(item.relPath, { thumbRelPath: item.thumbRelPath, fallbackImageUrl: g.logoUrl })
+      }
     }
     return m
-  }, [lib.library])
+  }, [lib.libraryGroups])
 
   const currentTrackThumbRel = useMemo(
     () => lib.library.find((v) => v.relPath === playback.currentRel)?.thumbRelPath ?? null,

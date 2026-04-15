@@ -115,6 +115,7 @@ export default function LibraryPage({
                   >
                     <MediaThumbSlot
                       thumbRelPath={item.thumbRelPath}
+                      fallbackImageUrl={group.logoUrl}
                       widthClassName="w-20"
                       showPlayOverlay={!isActive}
                       isActive={isActive}
