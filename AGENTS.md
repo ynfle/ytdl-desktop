@@ -1,6 +1,11 @@
 ## Learned User Preferences
 
-- Prefers Bun for the desktop app when available (`bun install` / `bun run`); install Bun with `brew tap oven-sh/bun && brew install bun` if missing; npm is an acceptable alternative.
+- **Bun for JS tooling (preferred):** Use Bun instead of npm/npx for this repo when possible.
+  - Install deps: `bun install` (from the relevant package root, e.g. `desktop/`).
+  - Run `package.json` scripts: `bun run <script>` (e.g. `bun run dev`, `bun run build`).
+  - Run a package binary once (replaces `npx`): **`bunx <command>`** — e.g. `bunx tsc --noEmit`, `bunx eslint .`.
+  - Install Bun if missing: `brew tap oven-sh/bun && brew install bun`.
+  - npm / npx remain acceptable fallbacks if Bun is unavailable; prefer Bun when both work.
 - OK with installing tools or dependencies via Homebrew when needed for setup or fixes.
 - On macOS, the Electron app should fully quit when the main window is closed (not stay running in the dock with no window).
 - Prefers player layout: video in the right column; play/pause, progress, and seeking span the full width below the main row (library/pages + video), not only under the video strip; while Picture-in-Picture is active, the right video column is collapsed.

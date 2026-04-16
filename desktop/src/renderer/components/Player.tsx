@@ -481,7 +481,7 @@ function usePlayerChrome({
         <button
           onClick={onSkipNext}
           className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text hover:bg-surface-raised/50"
-          title="Next"
+          title="Next track (media key Next, or ⌘/Ctrl+Shift+→)"
         >
           <SkipForward size={15} />
         </button>

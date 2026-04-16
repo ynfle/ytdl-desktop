@@ -85,6 +85,38 @@ function pushMediaSessionPositionState(el: HTMLVideoElement): void {
 }
 
 /**
+ * Skip media shortcuts when focus is in a text field so we do not steal keys from typing.
+ * Range/checkbox-style inputs are treated as non-text so transport shortcuts still work.
+ */
+function isKeyboardTargetEditable(target: EventTarget | null): boolean {
+  if (target == null || !(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) {
+    console.log('[usePlayback] keyboard media shortcut skipped (contenteditable)')
+    return true
+  }
+  const inputLike = target.closest('input, textarea, select')
+  if (!inputLike) return false
+  if (inputLike instanceof HTMLInputElement) {
+    const t = inputLike.type
+    if (
+      t === 'button' ||
+      t === 'checkbox' ||
+      t === 'radio' ||
+      t === 'range' ||
+      t === 'file' ||
+      t === 'hidden' ||
+      t === 'color' ||
+      t === 'reset' ||
+      t === 'submit'
+    ) {
+      return false
+    }
+  }
+  console.log('[usePlayback] keyboard media shortcut skipped (form field focused)')
+  return true
+}
+
+/**
  * Filter autoplay list to paths still on disk; if the track at savedCursor is gone,
  * skip forward then fall back to first valid entry.
  */
@@ -183,6 +215,11 @@ export function usePlayback(
    * usual "close floating player on track change" effect so the window is not torn down twice.
    */
   const pendingFloatingReopenRef = useRef(false)
+  /**
+   * When both `navigator.mediaSession` and `keydown` deliver the same physical Next key in one
+   * frame, advance the playlist only once.
+   */
+  const skipNextCoalesceFrameRef = useRef(false)
   /**
    * Monotonic id for each {@link playRel} load. Stale `loadedmetadata` handlers from an
    * earlier in-flight `playRel` (user switched files before the prior load finished) must
@@ -1101,6 +1138,55 @@ export function usePlayback(
     console.log('[usePlayback] floatingTogglePlay (optimistic toggle until sync)')
   }, [])
 
+  /**
+   * OS media keys (`seekforward` / `seekbackward`) and Now Playing scrub must adjust the **active**
+   * player. While Electron floating PiP is open, the main `<video>` stays paused — seeks there are
+   * invisible; forward the delta to {@link floatingSeek} using {@link floatingSyncRef} time.
+   */
+  const applyMediaSessionSeekDelta = useCallback((deltaSec: number): void => {
+    if (floatingPlayerActiveRef.current) {
+      const sync = floatingSyncRef.current
+      if (!sync) {
+        console.warn('[usePlayback] applyMediaSessionSeekDelta: floating PiP on but no sync yet', {
+          deltaSec
+        })
+        return
+      }
+      const dur = sync.duration
+      const cur = sync.currentTime
+      let nextT: number
+      if (dur > 0 && Number.isFinite(dur)) {
+        nextT = Math.max(0, Math.min(dur, cur + deltaSec))
+      } else {
+        nextT = Math.max(0, cur + deltaSec)
+      }
+      console.info('[usePlayback] applyMediaSessionSeekDelta (floating PiP)', {
+        deltaSec,
+        cur,
+        dur,
+        nextT
+      })
+      floatingSeek(nextT)
+      return
+    }
+    const el = videoRef.current
+    if (!el) {
+      console.warn('[usePlayback] applyMediaSessionSeekDelta: no <video> element', { deltaSec })
+      return
+    }
+    const dur = el.duration
+    const cur = el.currentTime
+    let nextT: number
+    if (dur > 0 && !Number.isNaN(dur)) {
+      nextT = Math.max(0, Math.min(dur, cur + deltaSec))
+    } else {
+      nextT = Math.max(0, cur + deltaSec)
+    }
+    el.currentTime = nextT
+    queueMicrotask(() => pushMediaSessionPositionState(el))
+    console.info('[usePlayback] applyMediaSessionSeekDelta (inline <video>)', { deltaSec, nextT })
+  }, [floatingSeek])
+
   /** Skip to next track in playlist. */
   const skipNext = useCallback(() => {
     const pl = playlistRef.current
@@ -1124,6 +1210,41 @@ export function usePlayback(
     }
     setCursor(i + 1)
   }, [flushPositionNow, allowSpotSaveRef])
+
+  /** Media keys / `keydown`: coalesce duplicate deliveries in the same animation frame. */
+  const skipNextFromMediaKeys = useCallback(() => {
+    if (skipNextCoalesceFrameRef.current) {
+      console.log('[usePlayback] skipNextFromMediaKeys: ignored (coalesced same frame)')
+      return
+    }
+    skipNextCoalesceFrameRef.current = true
+    requestAnimationFrame(() => {
+      skipNextCoalesceFrameRef.current = false
+    })
+    console.log('[usePlayback] skipNextFromMediaKeys → skipNext')
+    skipNext()
+  }, [skipNext])
+
+  /**
+   * Control Center, Bluetooth headsets, and many keyboards send **`seekforward`** for the
+   * “fast-forward / skip ahead” control, not **`nexttrack`**. When the session has another queued
+   * file, treat that as **next episode** (same as the in-app Skip control); on the last item,
+   * fall back to an in-file jump (+{@link MEDIA_SESSION_SEEK_SEC}s).
+   */
+  const handleOsSeekForward = useCallback((): void => {
+    const pl = playlistRef.current
+    const i = cursorRef.current
+    if (i + 1 < pl.length) {
+      console.info('[usePlayback] OS seekforward / FF intent → next track', {
+        cursor: i,
+        playlistLength: pl.length
+      })
+      skipNextFromMediaKeys()
+      return
+    }
+    console.info('[usePlayback] OS seekforward / FF intent → in-file seek (last or only item)')
+    applyMediaSessionSeekDelta(MEDIA_SESSION_SEEK_SEC)
+  }, [skipNextFromMediaKeys, applyMediaSessionSeekDelta])
 
   /** Tear down floating player when the main window switches to another file (not auto-advance from PiP). */
   useEffect(() => {
@@ -1253,45 +1374,65 @@ export function usePlayback(
     }
 
     const play = (): void => {
+      if (floatingPlayerActiveRef.current) {
+        const sync = floatingSyncRef.current
+        if (sync?.playing) {
+          console.log('[usePlayback] mediaSession play noop (floating PiP already playing)')
+          return
+        }
+        floatingTogglePlay()
+        console.log('[usePlayback] mediaSession play → floating PiP')
+        return
+      }
       void videoRef.current?.play()
-      console.log('[usePlayback] mediaSession play')
+      console.log('[usePlayback] mediaSession play (inline <video>)')
     }
     const pause = (): void => {
+      if (floatingPlayerActiveRef.current) {
+        const sync = floatingSyncRef.current
+        if (sync && !sync.playing) {
+          console.log('[usePlayback] mediaSession pause noop (floating PiP already paused)')
+          return
+        }
+        floatingTogglePlay()
+        console.log('[usePlayback] mediaSession pause → floating PiP')
+        return
+      }
       videoRef.current?.pause()
-      console.log('[usePlayback] mediaSession pause')
+      console.log('[usePlayback] mediaSession pause (inline <video>)')
     }
     /** Relative rewind: used by `seekbackward` and often by hardware / OS as `previoustrack`. */
     const seekBack = (): void => {
-      const el = videoRef.current
-      if (!el) return
-      el.currentTime = Math.max(0, el.currentTime - MEDIA_SESSION_SEEK_SEC)
-      queueMicrotask(() => pushMediaSessionPositionState(el))
-      console.log('[usePlayback] mediaSession seekbackward (or previoustrack → seek back)')
+      applyMediaSessionSeekDelta(-MEDIA_SESSION_SEEK_SEC)
+      console.log('[usePlayback] mediaSession seekbackward / previoustrack')
     }
     const seekFwd = (): void => {
-      const el = videoRef.current
-      if (!el) return
-      const dur = el.duration
-      if (dur > 0 && !Number.isNaN(dur)) el.currentTime = Math.min(dur, el.currentTime + MEDIA_SESSION_SEEK_SEC)
-      else el.currentTime = el.currentTime + MEDIA_SESSION_SEEK_SEC
-      queueMicrotask(() => pushMediaSessionPositionState(el))
-      console.log('[usePlayback] mediaSession seekforward')
+      handleOsSeekForward()
     }
     const seekTo = (details: MediaSessionActionDetails): void => {
-      const el = videoRef.current
-      if (!el) return
       const t = details.seekTime
       if (t == null || !Number.isFinite(t)) return
+      if (floatingPlayerActiveRef.current) {
+        const sync = floatingSyncRef.current
+        const dur =
+          sync && sync.duration > 0 && Number.isFinite(sync.duration) ? sync.duration : 0
+        const clamped = dur > 0 ? Math.max(0, Math.min(dur, t)) : Math.max(0, t)
+        floatingSeek(clamped)
+        console.log('[usePlayback] mediaSession seekto (floating PiP)', { requested: t, clamped, dur })
+        return
+      }
+      const el = videoRef.current
+      if (!el) return
       const dur = el.duration
       const clamped =
         dur > 0 && Number.isFinite(dur) ? Math.max(0, Math.min(dur, t)) : Math.max(0, t)
       el.currentTime = clamped
       queueMicrotask(() => pushMediaSessionPositionState(el))
-      console.log('[usePlayback] mediaSession seekto', { requested: t, clamped })
+      console.log('[usePlayback] mediaSession seekto (inline <video>)', { requested: t, clamped })
     }
     const next = (): void => {
       console.log('[usePlayback] mediaSession nexttrack')
-      skipNext()
+      skipNextFromMediaKeys()
     }
 
     try {
@@ -1319,7 +1460,71 @@ export function usePlayback(
         /* ignore */
       }
     }
-  }, [currentRel, skipNext])
+  }, [currentRel, skipNextFromMediaKeys, applyMediaSessionSeekDelta, floatingSeek, floatingTogglePlay, handleOsSeekForward])
+
+  /**
+   * Hardware / OS "next track" key (`MediaTrackNext`) is not always routed through
+   * {@link MediaSession#setActionHandler} in Electron; listen on `window` as well.
+   * Fallback chord: ⌘/Ctrl+Shift+ArrowRight (matches common desktop player patterns).
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (isKeyboardTargetEditable(e.target)) return
+      if (!currentRelRef.current) return
+
+      const isMediaRewind = e.key === 'MediaRewind' || e.code === 'MediaRewind'
+      const isMediaFastForward = e.key === 'MediaFastForward' || e.code === 'MediaFastForward'
+      const isMediaTrackPrevious = e.key === 'MediaTrackPrevious' || e.code === 'MediaTrackPrevious'
+
+      if (isMediaRewind || isMediaTrackPrevious) {
+        e.preventDefault()
+        console.log('[usePlayback] keyboard rewind / previous track key → seek back', {
+          key: e.key,
+          code: e.code
+        })
+        applyMediaSessionSeekDelta(-MEDIA_SESSION_SEEK_SEC)
+        return
+      }
+      if (isMediaFastForward) {
+        e.preventDefault()
+        console.log('[usePlayback] keyboard MediaFastForward (same intent as Control Center FF)', {
+          key: e.key,
+          code: e.code
+        })
+        handleOsSeekForward()
+        return
+      }
+
+      const isMediaTrackNext = e.key === 'MediaTrackNext' || e.code === 'MediaTrackNext'
+      const isNextChord =
+        e.shiftKey &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        (e.key === 'ArrowRight' || e.code === 'ArrowRight')
+      if (!isMediaTrackNext && !isNextChord) return
+
+      const pl = playlistRef.current
+      const i = cursorRef.current
+      if (i + 1 >= pl.length) {
+        console.log('[usePlayback] keyboard next: ignored (no next item in playlist)', {
+          cursor: i,
+          len: pl.length
+        })
+        return
+      }
+
+      e.preventDefault()
+      console.log('[usePlayback] keyboard next', {
+        key: e.key,
+        code: e.code,
+        isMediaTrackNext,
+        isNextChord
+      })
+      skipNextFromMediaKeys()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [skipNextFromMediaKeys, applyMediaSessionSeekDelta, handleOsSeekForward])
 
   /** Publish duration/position so the OS enables seek / scrub (especially macOS). */
   useEffect(() => {
