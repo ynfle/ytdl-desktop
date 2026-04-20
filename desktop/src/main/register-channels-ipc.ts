@@ -22,7 +22,7 @@ import {
   broadcastChannelRow
 } from './broadcast'
 import { isChannelRowValidForAdd, normalizeChannelInput } from './channel-input'
-import { appendChannelLine, readChannelsLinesOrEmpty } from './library-scan'
+import { appendChannelLine, readChannelsLinesOrEmpty, removeChannelLine } from './library-scan'
 import { runWithConcurrency } from './yt-dlp-runner'
 import { DISPLAY_META_TTL_MS } from './constants'
 
@@ -221,6 +221,30 @@ export function registerChannelsIpc(): void {
       return { ok: false as const, duplicate: true as const }
     }
     return { ok: false as const, error: 'error' in append ? append.error : 'Could not write channels.txt.' }
+  })
+
+  ipcMain.handle('channels:removeChannel', async (_e, identifierParam: unknown) => {
+    /** Match {@link podcasts:removePodcast}: only block active media sync (yt-dlp download). */
+    if (state.syncRunning) {
+      return {
+        ok: false as const,
+        error: 'A download is in progress; try again when it finishes.'
+      }
+    }
+    if (typeof identifierParam !== 'string' || !identifierParam.trim()) {
+      return { ok: false as const, error: 'Invalid channel identifier.' }
+    }
+    const root = resolve(getDataDir())
+    const needle = identifierParam.trim()
+    const r = await removeChannelLine(root, needle)
+    if (r.ok) {
+      console.info(LOG, 'channels:removeChannel', needle)
+      return { ok: true as const }
+    }
+    if ('notFound' in r && r.notFound) {
+      return { ok: false as const, notFound: true as const }
+    }
+    return { ok: false as const, error: 'error' in r ? r.error : 'Remove failed.' }
   })
 
   ipcMain.handle('channels:resolveInfo', (_e, opts?: { force?: boolean }) => {

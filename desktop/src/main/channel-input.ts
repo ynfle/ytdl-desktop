@@ -1,7 +1,7 @@
 import type { ChannelInfoRow } from '../../shared/ytdl-api'
 
-/** Hostnames we accept when normalizing a pasted YouTube channel URL. */
-const YT_HOST = /^(?:www\.|m\.)?youtube\.com$/i
+/** Hostnames we accept when normalizing a pasted YouTube channel URL (incl. Music channel pages). */
+const YT_HOST = /^(?:www\.|m\.)?youtube\.com$|^music\.youtube\.com$/i
 
 /**
  * Turn user paste or typed slug into a single channels.txt path segment.

@@ -168,6 +168,25 @@ export function usePlaylists(appendLog: (chunk: string) => void, dataDir: string
     }
   }, [addPreview, appendLog, loadPlaylistRows])
 
+  /** Drop one URL line from playlists.txt and reload from cache. */
+  const removePlaylist = useCallback(
+    async (playlistUrl: string): Promise<boolean> => {
+      console.log('[usePlaylists] removePlaylist', playlistUrl.slice(0, 72))
+      const r = await window.ytdl.removePlaylist(playlistUrl)
+      if (!r.ok) {
+        const msg = r.notFound ? 'Not in playlists.txt.' : (r.error ?? 'Remove failed.')
+        appendLog(`[ui] remove playlist: ${msg}\n`)
+        console.warn('[usePlaylists] removePlaylist failed', msg)
+        return false
+      }
+      appendLog(`[ui] removed playlist from list\n`)
+      await loadPlaylistRows()
+      console.log('[usePlaylists] removePlaylist done')
+      return true
+    },
+    [appendLog, loadPlaylistRows]
+  )
+
   return {
     playlistRows,
     playlistsBusy,
@@ -180,6 +199,7 @@ export function usePlaylists(appendLog: (chunk: string) => void, dataDir: string
     addFormError,
     lookUpPlaylist,
     cancelAddPreview,
-    confirmAddPlaylist
+    confirmAddPlaylist,
+    removePlaylist
   }
 }

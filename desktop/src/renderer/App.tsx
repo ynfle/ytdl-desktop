@@ -152,6 +152,79 @@ export default function App(): React.ReactElement {
     applyLibraryScanResult(result)
   }, [lib.refreshLibrary, applyLibraryScanResult])
 
+  const handleRemoveChannel = useCallback(
+    (identifier: string) => {
+      if (!window.confirm(`Remove "${identifier}" from channels.txt?`)) {
+        console.log('[App] remove channel cancelled', identifier)
+        return
+      }
+      console.log('[App] remove channel confirmed', identifier)
+      void channels.removeChannel(identifier)
+    },
+    [channels.removeChannel]
+  )
+
+  const handleRemovePlaylist = useCallback(
+    (playlistUrl: string) => {
+      const preview =
+        playlistUrl.length > 120 ? `${playlistUrl.slice(0, 120)}…` : playlistUrl
+      if (!window.confirm(`Remove this playlist from playlists.txt?\n\n${preview}`)) {
+        console.log('[App] remove playlist cancelled', playlistUrl.slice(0, 64))
+        return
+      }
+      console.log('[App] remove playlist confirmed', playlistUrl.slice(0, 64))
+      void playlists.removePlaylist(playlistUrl)
+    },
+    [playlists.removePlaylist]
+  )
+
+  const handleRemovePodcast = useCallback(
+    (feedUrl: string) => {
+      const preview = feedUrl.length > 120 ? `${feedUrl.slice(0, 120)}…` : feedUrl
+      if (!window.confirm(`Remove this podcast from podcasts.txt?\n\n${preview}`)) {
+        console.log('[App] remove podcast cancelled', feedUrl.slice(0, 64))
+        return
+      }
+      console.log('[App] remove podcast confirmed', feedUrl.slice(0, 64))
+      void podcasts.removePodcast(feedUrl)
+    },
+    [podcasts.removePodcast]
+  )
+
+  /** Resolve drawer row label for confirm; falls back if index no longer matches (stale UI). */
+  const handleRemovePlaylistIndex = useCallback(
+    (playlistIndex: number) => {
+      const all = [...playback.drawerUpNext, ...playback.drawerQueued]
+      const hit = all.find((r) => r.playlistIndex === playlistIndex)
+      const label = hit ? parseLibraryRelPath(hit.relPath).fileName : `queue item (index ${playlistIndex})`
+      if (!window.confirm(`Remove "${label}" from the queue?`)) {
+        console.log('[App] remove queue playlist index cancelled', playlistIndex)
+        return
+      }
+      console.log('[App] remove queue playlist index confirmed', { playlistIndex, label })
+      playback.removeFromPlaylistIndex(playlistIndex)
+    },
+    [
+      playback.drawerQueued,
+      playback.drawerUpNext,
+      playback.removeFromPlaylistIndex
+    ]
+  )
+
+  const handleRemoveStagingIndex = useCallback(
+    (index: number) => {
+      const hit = playback.drawerStagingItems.find((r) => r.index === index)
+      const label = hit ? parseLibraryRelPath(hit.relPath).fileName : `staging item ${index}`
+      if (!window.confirm(`Remove "${label}" from the staging queue?`)) {
+        console.log('[App] remove staging index cancelled', index)
+        return
+      }
+      console.log('[App] remove staging index confirmed', { index, label })
+      playback.removeFromStagingIndex(index)
+    },
+    [playback.drawerStagingItems, playback.removeFromStagingIndex]
+  )
+
   /** Permanently remove one media file from disk and prune playback state. */
   const handleDeleteLibraryItem = useCallback(
     async (relPath: string) => {
@@ -230,6 +303,7 @@ export default function App(): React.ReactElement {
             onLookUpChannel={(raw) => void channels.lookUpChannel(raw)}
             onCancelAddPreview={channels.cancelAddPreview}
             onConfirmAddChannel={() => channels.confirmAddChannel()}
+            onRemoveChannel={handleRemoveChannel}
           />
         )
       case 'playlists':
@@ -254,6 +328,7 @@ export default function App(): React.ReactElement {
             onLookUpPlaylist={(raw) => void playlists.lookUpPlaylist(raw)}
             onCancelAddPreview={playlists.cancelAddPreview}
             onConfirmAddPlaylist={() => playlists.confirmAddPlaylist()}
+            onRemovePlaylist={handleRemovePlaylist}
           />
         )
       case 'podcasts':
@@ -284,7 +359,7 @@ export default function App(): React.ReactElement {
             onLookUpPodcast={(raw, opts) => void podcasts.lookUpPodcast(raw, opts)}
             onCancelAddPreview={podcasts.cancelAddPreview}
             onConfirmAddPodcast={() => podcasts.confirmAddPodcast()}
-            onRemovePodcast={(url) => void podcasts.removePodcast(url)}
+            onRemovePodcast={handleRemovePodcast}
           />
         )
       case 'downloads':
@@ -364,8 +439,8 @@ export default function App(): React.ReactElement {
         currentRel={playback.currentRel}
         onPlayPlaylistIndex={playback.playFromPlaylistIndex}
         onPlayStagingIndex={playback.playFromStagingIndex}
-        onRemovePlaylistIndex={playback.removeFromPlaylistIndex}
-        onRemoveStagingIndex={playback.removeFromStagingIndex}
+        onRemovePlaylistIndex={handleRemovePlaylistIndex}
+        onRemoveStagingIndex={handleRemoveStagingIndex}
         thumbByRel={libraryThumbByRel}
       />
 

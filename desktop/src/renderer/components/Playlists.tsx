@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ExternalLink, ListVideo, Loader2, Search, UserPlus } from 'lucide-react'
+import { ExternalLink, ListVideo, Loader2, Search, Trash2, UserPlus } from 'lucide-react'
 import type { ChannelInfoRow } from '../../../shared/ytdl-api'
 import { ChannelAvatar } from './ChannelAvatar'
 import {
@@ -167,6 +167,8 @@ type Props = {
   onLookUpPlaylist: (raw: string) => void
   onCancelAddPreview: () => void
   onConfirmAddPlaylist: () => Promise<boolean>
+  /** Remove one line from playlists.txt (row.identifier is the stored URL). */
+  onRemovePlaylist: (playlistUrl: string) => void
 }
 
 /** Playlists page: playlists.txt subscriptions, metadata refresh, same cache as channels. */
@@ -189,7 +191,8 @@ export default function PlaylistsPage({
   addFormError,
   onLookUpPlaylist,
   onCancelAddPreview,
-  onConfirmAddPlaylist
+  onConfirmAddPlaylist,
+  onRemovePlaylist
 }: Props) {
   const [rawInput, setRawInput] = useState('')
 
@@ -339,6 +342,15 @@ export default function PlaylistsPage({
                           <ExternalLink size={12} />
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        disabled={anyBusy}
+                        onClick={() => void onRemovePlaylist(row.identifier)}
+                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all disabled:opacity-40"
+                        title="Remove from playlists.txt"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </td>
                 </motion.tr>

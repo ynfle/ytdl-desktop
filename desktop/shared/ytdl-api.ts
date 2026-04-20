@@ -149,6 +149,8 @@ export type YtdlApi = {
    * Append normalized identifier to channels.txt after re-validating metadata (cache or re-resolve).
    */
   addChannel: (identifier: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
+  /** Remove one line from channels.txt (exact stored identifier). */
+  removeChannel: (identifier: string) => Promise<{ ok: boolean; error?: string; notFound?: boolean }>
   /** Lines from playlists.txt (no network). */
   readPlaylistUrls: () => Promise<{ ok: boolean; urls?: string[]; error?: string }>
   /** playlists.txt rows merged with channel-display cache (same bucket as channels). */
@@ -168,6 +170,8 @@ export type YtdlApi = {
     error?: string
   }>
   addPlaylist: (playlistUrl: string) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>
+  /** Remove one line from playlists.txt (exact stored URL). */
+  removePlaylist: (playlistUrl: string) => Promise<{ ok: boolean; error?: string; notFound?: boolean }>
   onPlaylistResolveProgress: (
     cb: (p: { index: number; total: number; identifier: string }) => void
   ) => () => void

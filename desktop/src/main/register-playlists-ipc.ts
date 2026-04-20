@@ -19,7 +19,7 @@ import {
 } from './broadcast'
 import { isPlaylistRowValidForAdd, normalizePlaylistInput } from './playlist-input'
 import { resolvePlaylistRow } from './playlist-yt-dlp'
-import { appendPlaylistLine, readPlaylistsLinesOrEmpty } from './library-scan'
+import { appendPlaylistLine, readPlaylistsLinesOrEmpty, removePlaylistLine } from './library-scan'
 import { runWithConcurrency } from './yt-dlp-runner'
 
 export function registerPlaylistsIpc(): void {
@@ -223,6 +223,47 @@ export function registerPlaylistsIpc(): void {
       return { ok: false as const, duplicate: true as const }
     }
     return { ok: false as const, error: 'error' in append ? append.error : 'Could not write playlists.txt.' }
+  })
+
+  ipcMain.handle('playlists:removePlaylist', async (_e, urlParam: unknown) => {
+    if (state.syncRunning) {
+      return {
+        ok: false as const,
+        error: 'A download is in progress; try again when it finishes.'
+      }
+    }
+    if (state.channelMetaRunning) {
+      return {
+        ok: false as const,
+        error: 'Channel name lookup is running; wait for it to finish.'
+      }
+    }
+    if (state.podcastMetaRunning) {
+      return {
+        ok: false as const,
+        error: 'Podcast metadata refresh is running; wait for it to finish.'
+      }
+    }
+    if (state.playlistMetaRunning) {
+      return {
+        ok: false as const,
+        error: 'Playlist metadata refresh is running; wait for it to finish.'
+      }
+    }
+    if (typeof urlParam !== 'string' || !urlParam.trim()) {
+      return { ok: false as const, error: 'Invalid playlist URL.' }
+    }
+    const root = resolve(getDataDir())
+    const needle = urlParam.trim()
+    const r = await removePlaylistLine(root, needle)
+    if (r.ok) {
+      console.info(LOG, 'playlists:removePlaylist', needle.slice(0, 72))
+      return { ok: true as const }
+    }
+    if ('notFound' in r && r.notFound) {
+      return { ok: false as const, notFound: true as const }
+    }
+    return { ok: false as const, error: 'error' in r ? r.error : 'Remove failed.' }
   })
 
   ipcMain.handle('playlists:resolveInfo', (_e, opts?: { force?: boolean }) => {

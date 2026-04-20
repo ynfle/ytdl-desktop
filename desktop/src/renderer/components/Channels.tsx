@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ExternalLink, Loader2, Radio, Search, UserPlus } from 'lucide-react'
+import { ExternalLink, Loader2, Radio, Search, Trash2, UserPlus } from 'lucide-react'
 import type { ChannelInfoRow } from '../../../shared/ytdl-api'
 import { ChannelAvatar } from './ChannelAvatar'
 import {
@@ -172,6 +172,8 @@ type Props = {
   onLookUpChannel: (raw: string) => void
   onCancelAddPreview: () => void
   onConfirmAddChannel: () => Promise<boolean>
+  /** Remove one line from channels.txt (same identifier as the row). */
+  onRemoveChannel: (identifier: string) => void
 }
 
 /** Channels page: table of channels.txt entries with resolve controls and progress. */
@@ -194,7 +196,8 @@ export default function ChannelsPage({
   addFormError,
   onLookUpChannel,
   onCancelAddPreview,
-  onConfirmAddChannel
+  onConfirmAddChannel,
+  onRemoveChannel
 }: Props) {
   const [addRawInput, setAddRawInput] = useState('')
 
@@ -291,7 +294,7 @@ export default function ChannelsPage({
                 <th>channels.txt</th>
                 <th>YouTube Name</th>
                 <th>Status</th>
-                <th className="w-20">Open</th>
+                <th className="w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -336,6 +339,15 @@ export default function ChannelsPage({
                           <ExternalLink size={12} />
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        disabled={anyBusy}
+                        onClick={() => void onRemoveChannel(row.identifier)}
+                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all disabled:opacity-40"
+                        title="Remove from channels.txt"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </td>
                 </motion.tr>

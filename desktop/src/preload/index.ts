@@ -29,12 +29,14 @@ const api: YtdlApi = {
     ipcRenderer.invoke('channels:resolveInfo', opts ?? {}),
   previewChannel: (raw: string) => ipcRenderer.invoke('channels:previewChannel', raw),
   addChannel: (identifier: string) => ipcRenderer.invoke('channels:addChannel', identifier),
+  removeChannel: (identifier: string) => ipcRenderer.invoke('channels:removeChannel', identifier),
   readPlaylistUrls: () => ipcRenderer.invoke('playlists:readUrls'),
   hydratePlaylistRowsFromCache: () => ipcRenderer.invoke('playlists:hydrateFromCache'),
   resolvePlaylistInfo: (opts?: { force?: boolean }) =>
     ipcRenderer.invoke('playlists:resolveInfo', opts ?? {}),
   previewPlaylist: (raw: string) => ipcRenderer.invoke('playlists:preview', raw),
   addPlaylist: (playlistUrl: string) => ipcRenderer.invoke('playlists:add', playlistUrl),
+  removePlaylist: (playlistUrl: string) => ipcRenderer.invoke('playlists:removePlaylist', playlistUrl),
   onPlaylistResolveProgress: (cb) => {
     const listener = (
       _: Electron.IpcRendererEvent,

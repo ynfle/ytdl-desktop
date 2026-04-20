@@ -172,6 +172,40 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
     }
   }, [addPreview, appendLog, loadChannelIdentifiers])
 
+  /** Drop one identifier from channels.txt and reload the table from cache. */
+  const removeChannel = useCallback(
+    async (identifier: string): Promise<boolean> => {
+      console.log('[useChannels] removeChannel', identifier)
+      if (typeof window.ytdl.removeChannel !== 'function') {
+        const msg = 'removeChannel is missing from preload (rebuild or restart dev after preload changes).'
+        appendLog(`[ui] remove channel: ${msg}\n`)
+        window.alert(msg)
+        return false
+      }
+      try {
+        const r = await window.ytdl.removeChannel(identifier)
+        if (!r.ok) {
+          const msg = r.notFound ? 'Not in channels.txt (line may differ from the table row).' : (r.error ?? 'Remove failed.')
+          appendLog(`[ui] remove channel: ${msg}\n`)
+          console.warn('[useChannels] removeChannel failed', msg)
+          window.alert(msg)
+          return false
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        appendLog(`[ui] remove channel: ${msg}\n`)
+        console.error('[useChannels] removeChannel invoke error', e)
+        window.alert(`Remove channel failed: ${msg}`)
+        return false
+      }
+      appendLog(`[ui] removed channel from list\n`)
+      await loadChannelIdentifiers()
+      console.log('[useChannels] removeChannel done', identifier)
+      return true
+    },
+    [appendLog, loadChannelIdentifiers]
+  )
+
   return {
     channelRows,
     channelsBusy,
@@ -184,6 +218,7 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
     addFormError,
     lookUpChannel,
     cancelAddPreview,
-    confirmAddChannel
+    confirmAddChannel,
+    removeChannel
   }
 }

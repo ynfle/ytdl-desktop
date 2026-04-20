@@ -1,5 +1,6 @@
 import { extname, join, relative, sep } from 'path'
 import { promises as fs } from 'fs'
+import { normalizeChannelInput } from './channel-input'
 import { LIBRARY_MEDIA_EXT, LOG } from './constants'
 import { resolveSidecarThumbnailRelPath } from './library-thumbnail'
 
@@ -81,16 +82,13 @@ async function readDataRootLinesFile(dataRoot: string, fileName: string): Promis
   return parseSubscriptionLines(text)
 }
 
-export async function readChannelsFile(dataRoot: string): Promise<string[]> {
-  return readDataRootLinesFile(dataRoot, 'channels.txt')
-}
-
-/**
- * Append one normalized identifier as a new line in channels.txt.
- * Creates the file if needed. Caller must pass an already-normalized identifier.
- */
+const CHANNELS_FILE = 'channels.txt' as const
 const PODCASTS_FILE = 'podcasts.txt' as const
 const PLAYLISTS_FILE = 'playlists.txt' as const
+
+export async function readChannelsFile(dataRoot: string): Promise<string[]> {
+  return readDataRootLinesFile(dataRoot, CHANNELS_FILE)
+}
 
 /** Same line rules as channels.txt; returns [] when podcasts.txt is missing. */
 export async function readPodcastsLinesOrEmpty(dataRoot: string): Promise<string[]> {
@@ -225,8 +223,106 @@ export async function appendPlaylistLine(dataRoot: string, playlistUrl: string):
   }
 }
 
+/** Strip shell-style trailing `# comment` so `foo # bar` matches `foo` for removal. */
+function stripChannelLineComment(line: string): string {
+  const i = line.indexOf('#')
+  if (i < 0) return line.trim()
+  return line.slice(0, i).trim()
+}
+
+/**
+ * Map UI / IPC needle to the exact line stored in channels.txt.
+ * Lines may be bare slugs, full /videos URLs, music.youtube.com, inline `#` comments, etc.
+ */
+function resolveChannelLineForRemoval(lines: string[], needle: string): string | null {
+  const t = needle.trim()
+  if (!t) return null
+  if (lines.includes(t)) return t
+
+  const strippedNeedle = stripChannelLineComment(t)
+  if (strippedNeedle.length > 0) {
+    const byComment = lines.find((l) => stripChannelLineComment(l) === strippedNeedle)
+    if (byComment) return byComment
+  }
+
+  const normNeedle = normalizeChannelInput(t)
+  if (normNeedle) {
+    const byNorm = lines.find((l) => {
+      if (l === normNeedle) return true
+      const nl = normalizeChannelInput(l)
+      if (nl === normNeedle) return true
+      return stripChannelLineComment(l).length > 0 && normalizeChannelInput(stripChannelLineComment(l)) === normNeedle
+    })
+    if (byNorm) return byNorm
+  }
+
+  return null
+}
+
+/** Remove one identifier line from channels.txt (exact or canonical match via {@link normalizeChannelInput}). */
+export async function removeChannelLine(
+  dataRoot: string,
+  identifier: string
+): Promise<{ ok: true } | { ok: false; notFound: true } | { ok: false; error: string }> {
+  const p = join(dataRoot, CHANNELS_FILE)
+  let lines: string[]
+  try {
+    lines = await readChannelsLinesOrEmpty(dataRoot)
+  } catch (e) {
+    console.error(LOG, 'removeChannelLine read failed', e)
+    return { ok: false, error: String(e) }
+  }
+  const toRemove = resolveChannelLineForRemoval(lines, identifier)
+  if (!toRemove) {
+    console.warn(LOG, 'removeChannelLine notFound', { needlePreview: identifier.slice(0, 64), lineCount: lines.length })
+    return { ok: false, notFound: true }
+  }
+  const next = lines.filter((l) => l !== toRemove)
+  try {
+    const body = next.length > 0 ? `${next.join('\n')}\n` : ''
+    await fs.writeFile(p, body, 'utf-8')
+    console.info(LOG, 'removeChannelLine ok', toRemove)
+    return { ok: true }
+  } catch (e) {
+    console.error(LOG, 'removeChannelLine write failed', e)
+    return { ok: false, error: String(e) }
+  }
+}
+
+/** Remove one exact playlist URL line from playlists.txt. */
+export async function removePlaylistLine(
+  dataRoot: string,
+  playlistUrl: string
+): Promise<{ ok: true } | { ok: false; notFound: true } | { ok: false; error: string }> {
+  const p = join(dataRoot, PLAYLISTS_FILE)
+  let lines: string[]
+  try {
+    lines = await readPlaylistsLinesOrEmpty(dataRoot)
+  } catch (e) {
+    console.error(LOG, 'removePlaylistLine read failed', e)
+    return { ok: false, error: String(e) }
+  }
+  if (!lines.includes(playlistUrl)) {
+    return { ok: false, notFound: true }
+  }
+  const next = lines.filter((l) => l !== playlistUrl)
+  try {
+    const body = next.length > 0 ? `${next.join('\n')}\n` : ''
+    await fs.writeFile(p, body, 'utf-8')
+    console.info(LOG, 'removePlaylistLine ok', playlistUrl.slice(0, 72))
+    return { ok: true }
+  } catch (e) {
+    console.error(LOG, 'removePlaylistLine write failed', e)
+    return { ok: false, error: String(e) }
+  }
+}
+
+/**
+ * Append one normalized identifier as a new line in channels.txt.
+ * Creates the file if needed. Caller must pass an already-normalized identifier.
+ */
 export async function appendChannelLine(dataRoot: string, identifier: string): Promise<AppendChannelResult> {
-  const p = join(dataRoot, 'channels.txt')
+  const p = join(dataRoot, CHANNELS_FILE)
   let existing: string[]
   try {
     existing = await readChannelsFile(dataRoot)
