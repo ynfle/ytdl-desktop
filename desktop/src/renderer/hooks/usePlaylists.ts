@@ -174,7 +174,9 @@ export function usePlaylists(appendLog: (chunk: string) => void, dataDir: string
       console.log('[usePlaylists] removePlaylist', playlistUrl.slice(0, 72))
       const r = await window.ytdl.removePlaylist(playlistUrl)
       if (!r.ok) {
-        const msg = r.notFound ? 'Not in playlists.txt.' : (r.error ?? 'Remove failed.')
+        const msg = r.notFound
+          ? 'Not in playlists.txt (stored URL must match the line exactly).'
+          : (r.error ?? 'Remove failed.')
         appendLog(`[ui] remove playlist: ${msg}\n`)
         console.warn('[usePlaylists] removePlaylist failed', msg)
         return false

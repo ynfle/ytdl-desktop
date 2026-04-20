@@ -113,7 +113,7 @@ export default function DownloadsPage({
         <ActionCard
           icon={<ListVideo size={17} className="text-accent" />}
           title="Download Playlists"
-          description="Fetch from playlists.txt only (same archive and folder layout as channels)"
+          description="Fetch from playlists.txt only (latest 10 items per playlist line, shared downloaded.txt)"
           disabled={anyBusy}
           onClick={onRunPlaylists}
           delay={0.04}

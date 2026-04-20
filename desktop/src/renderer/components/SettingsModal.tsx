@@ -90,9 +90,17 @@ export default function SettingsModal({ open, onClose, dataDir, onPickDir, onRes
                     ytdl desktop
                   </p>
                   <p className="text-[11px] text-text-muted leading-relaxed">
-                    Data and downloads are stored in the directory above. Channels are read from{' '}
-                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">channels.txt</code>{' '}
-                    in that folder.
+                    That folder is your data root: subscription lines live in{' '}
+                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">channels.txt</code>,{' '}
+                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">playlists.txt</code>, and{' '}
+                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">podcasts.txt</code>. YouTube
+                    channel, playlist, and ytrec jobs share{' '}
+                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">downloaded.txt</code>; podcast
+                    sync uses{' '}
+                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">podcast-downloaded.txt</code>.
+                    Media is written under{' '}
+                    <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">videos/</code>, which the library
+                    scans.
                   </p>
                 </div>
               </div>

@@ -49,7 +49,7 @@ function AddChannelBar({
   return (
     <div className="rounded-xl border border-border bg-surface-raised/60 p-4 space-y-3">
       <p className="text-[11px] text-text-muted leading-relaxed">
-        Add a channel: paste a full YouTube channel URL or type a slug (
+        Add a channel: paste a full YouTube or YouTube Music channel URL, or type a slug (
         <span className="font-mono text-text-secondary">@handle</span>,{' '}
         <span className="font-mono text-text-secondary">c/name</span>,{' '}
         <span className="font-mono text-text-secondary">channel/UC&hellip;</span>
@@ -68,9 +68,9 @@ function AddChannelBar({
             }
           }}
           disabled={interactionLocked || addPreviewLoading || addConfirmBusy}
-          placeholder="https://www.youtube.com/@… or @handle"
+          placeholder="youtube.com or music.youtube.com channel URL, or @handle"
           className={subPageLookUpInputClass}
-          aria-label="Channel URL or slug"
+          aria-label="YouTube or YouTube Music channel URL or slug"
         />
         <button
           type="button"

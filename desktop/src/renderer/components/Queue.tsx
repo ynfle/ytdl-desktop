@@ -233,7 +233,7 @@ export default function QueueDrawer({
                     extra={upNext.length > 0 ? `${upNext.length}` : undefined}
                   />
                   {upNext.length === 0 ? (
-                    <p className="px-4 py-4 text-[11px] text-text-muted">No upcoming videos from the library</p>
+                    <p className="px-4 py-4 text-[11px] text-text-muted">No upcoming items from the library</p>
                   ) : (
                     <ul>
                       {upNext.map((row, i) => {

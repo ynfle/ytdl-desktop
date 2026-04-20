@@ -289,7 +289,7 @@ export default function PlaylistsPage({
                 <th>playlists.txt</th>
                 <th>Title</th>
                 <th>Status</th>
-                <th className="w-20">Open</th>
+                <th className="w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
