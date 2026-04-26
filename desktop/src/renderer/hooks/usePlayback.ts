@@ -226,6 +226,14 @@ export function usePlayback(
    * not seek or call `play()` — they would apply the previous file's resume to the new src.
    */
   const playRelGenerationRef = useRef(0)
+  /**
+   * Latest rel path passed to {@link playRel}. {@link playRel} awaits `mediaUrl` — if the user
+   * switches tracks while that promise is in flight, a slower response must not assign `v.src`
+   * or `setCurrentRel` (that used to leave the new file playing at the old file's timeline).
+   */
+  const latestPlayRelRequestRef = useRef<string | null>(null)
+  /** Same ordering guard as {@link latestPlayRelRequestRef} for paused preview loads. */
+  const latestPreviewRelRequestRef = useRef<string | null>(null)
   useEffect(() => {
     floatingPlayerActiveRef.current = floatingPlayerActive
   }, [floatingPlayerActive])
@@ -314,8 +322,16 @@ export function usePlayback(
   /** Load and play a specific relPath. */
   const playRel = useCallback(
     async (relPath: string) => {
+      latestPlayRelRequestRef.current = relPath
       const v = videoRef.current
       const r = await window.ytdl.mediaUrl(relPath)
+      if (latestPlayRelRequestRef.current !== relPath) {
+        console.info('[usePlayback] playRel mediaUrl result ignored (newer track requested)', {
+          relPath,
+          latest: latestPlayRelRequestRef.current
+        })
+        return
+      }
       if (!r.ok || !r.url) {
         if (pendingFloatingReopenRef.current) {
           pendingFloatingReopenRef.current = false
@@ -327,6 +343,7 @@ export function usePlayback(
       }
       const resume = positionsRef.current[relPath]
       console.log(`[usePlayback] playing: ${relPath}`, { resumeSec: resume ?? null })
+      currentRelRef.current = relPath
       setCurrentRel(relPath)
       if (v) {
         playRelGenerationRef.current += 1
@@ -343,8 +360,19 @@ export function usePlayback(
             return
           }
           const dur = v.duration
-          if (resume != null && dur > 0 && !Number.isNaN(dur) && resume < dur * RESUME_MAX_FRACTION) {
+          const shouldResume =
+            resume != null &&
+            dur > 0 &&
+            !Number.isNaN(dur) &&
+            resume < dur * RESUME_MAX_FRACTION
+          if (shouldResume) {
             v.currentTime = Math.min(resume, dur * 0.999)
+          } else {
+            try {
+              v.currentTime = 0
+            } catch (e) {
+              console.warn('[usePlayback] could not reset currentTime after track change', e)
+            }
           }
           /** Continuation: floating window already closed on `ended`; hand next track back to PiP. */
           if (pendingFloatingReopenRef.current && shouldUseNativePictureInPictureOnly()) {
@@ -614,31 +642,48 @@ export function usePlayback(
   /** Paused preview: show last restored track + resume frame without autoplay. */
   useEffect(() => {
     if (!allowSpotSaveRef.current || playing || !currentRel) return
+    const relSnapshot = currentRel
+    latestPreviewRelRequestRef.current = relSnapshot
     const v = videoRef.current
     if (!v) return
     let cancelled = false
     /** Same idea as {@link playRelGenerationRef}: overlapping preview loads must not seek wrong file. */
     const previewGen = ++playRelGenerationRef.current
     void (async () => {
-      const r = await window.ytdl.mediaUrl(currentRel)
-      if (cancelled || currentRelRef.current !== currentRel) return
+      const r = await window.ytdl.mediaUrl(relSnapshot)
+      if (cancelled) return
+      if (latestPreviewRelRequestRef.current !== relSnapshot) {
+        console.info('[usePlayback] preview mediaUrl: superseded by newer selection', { relSnapshot })
+        return
+      }
       if (previewGen !== playRelGenerationRef.current) {
-        console.info('[usePlayback] preview mediaUrl: superseded by newer load', { currentRel, previewGen })
+        console.info('[usePlayback] preview mediaUrl: superseded by newer load', { relSnapshot, previewGen })
         return
       }
       if (!r.ok || !r.url) return
       v.src = r.url
-      const resume = positionsRef.current[currentRel]
+      const resume = positionsRef.current[relSnapshot]
       const onMeta = (): void => {
         v.removeEventListener('loadedmetadata', onMeta)
-        if (cancelled || currentRelRef.current !== currentRel) return
+        if (cancelled || latestPreviewRelRequestRef.current !== relSnapshot) return
         if (previewGen !== playRelGenerationRef.current) {
-          console.info('[usePlayback] ignoring stale preview loadedmetadata', { currentRel, previewGen })
+          console.info('[usePlayback] ignoring stale preview loadedmetadata', { relSnapshot, previewGen })
           return
         }
         const dur = v.duration
-        if (resume != null && dur > 0 && !Number.isNaN(dur) && resume < dur * RESUME_MAX_FRACTION) {
+        const shouldResume =
+          resume != null &&
+          dur > 0 &&
+          !Number.isNaN(dur) &&
+          resume < dur * RESUME_MAX_FRACTION
+        if (shouldResume) {
           v.currentTime = Math.min(resume, dur * 0.999)
+        } else {
+          try {
+            v.currentTime = 0
+          } catch (e) {
+            console.warn('[usePlayback] preview: could not reset currentTime', e)
+          }
         }
         v.pause()
       }
@@ -954,6 +999,7 @@ export function usePlayback(
       const nearEnd = dur > 0 && !Number.isNaN(dur) && t >= dur * RESUME_MAX_FRACTION
       if (!nearEnd && t >= 0.5) flushPositionNow(rel, t)
     }
+    latestPlayRelRequestRef.current = null
     setPlaying(false)
     setCurrentRel(null)
     if (videoRef.current) {
@@ -1091,6 +1137,7 @@ export function usePlayback(
         setFloatingPlayerActive(false)
         setFloatingSync(null)
         syncRestoreDocumentPip(true)
+        latestPlayRelRequestRef.current = null
         setPlaying(false)
         setCurrentRel(null)
         const v = videoRef.current
