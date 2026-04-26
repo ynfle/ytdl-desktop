@@ -129,22 +129,40 @@ function bindFloatingPlayerBoundsTracking(win: BrowserWindow): void {
 }
 
 /**
- * macOS: make the floating player appear on all Spaces, including with other apps in
- * full screen, and keep a high always-on-top level. No-op on other platforms.
+ * macOS: PiP on all **standard** Spaces (`setVisibleOnAllWorkspaces`) with a strong but not
+ * extreme always-on-top level.
+ *
+ * We intentionally **do not** pass `visibleOnFullScreen: true`: it rarely draws above another app’s
+ * exclusive full screen anyway, and in practice it has been associated with **broken main-window
+ * behavior** (focus / Stage Manager / hit-testing) while the PiP child is open—same process, stricter
+ * collection behavior. Chromium may also drop workspace hints until after load—re-invoke from
+ * `did-finish-load` / after `show()` in the open path.
  */
 function applyMacFloatOverFullScreenWorkspaces(win: BrowserWindow): void {
   if (process.platform !== 'darwin') return
   if (win.isDestroyed()) return
   try {
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    // Stronger than default "floating" so the child window stacks like Zoom/Teams toolbars.
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
+    // Stay below `screen-saver`: that tier can interfere with the main `BrowserWindow` in the same app.
     win.setAlwaysOnTop(true, 'pop-up-menu')
     console.info(
       LOG,
-      'floating player: macOS setVisibleOnAllWorkspaces + visibleOnFullScreen, alwaysOnTop pop-up-menu'
+      'floating player: macOS setVisibleOnAllWorkspaces (no visibleOnFullScreen), alwaysOnTop pop-up-menu'
     )
   } catch (e) {
     console.warn(LOG, 'floating player: applyMacFloatOverFullScreenWorkspaces failed', e)
+  }
+}
+
+/** Raise PiP in z-order without focusing it (helps Electron/macOS apply stacking after load/show). */
+function bumpMacFloatingStack(win: BrowserWindow): void {
+  if (process.platform !== 'darwin') return
+  if (win.isDestroyed()) return
+  try {
+    win.moveTop()
+    console.debug(LOG, 'floating player: moveTop (macOS stack bump)')
+  } catch (e) {
+    console.warn(LOG, 'floating player: moveTop failed', e)
   }
 }
 
@@ -241,6 +259,7 @@ async function handleOpenFloatingPlayer(
       win.webContents.send('floating-player:init', payload)
       applyMacFloatOverFullScreenWorkspaces(win)
       win.show()
+      bumpMacFloatingStack(win)
       console.info(LOG, 'openFloatingPlayer: hot-swap (reuse existing window)', {
         urlSample: opts.url.slice(0, 80)
       })
@@ -249,8 +268,8 @@ async function handleOpenFloatingPlayer(
     if (win && !win.isDestroyed()) {
       state.floatingPlayerCloseReason = 'replace'
       state.floatingPlayerSkipNextClosedNotify = true
-      persistFloatingPlayerBoundsFromWindow(state.floatingPlayerWindow)
-      state.floatingPlayerWindow.close()
+      persistFloatingPlayerBoundsFromWindow(win)
+      win.close()
       state.floatingPlayerWindow = null
     }
     state.floatingPlayerResumePlaying = Boolean(opts.playing)
@@ -276,6 +295,17 @@ async function handleOpenFloatingPlayer(
     })
     bindFloatingPlayerBoundsTracking(state.floatingPlayerWindow)
     applyMacFloatOverFullScreenWorkspaces(state.floatingPlayerWindow)
+    // Chromium may reset collection behavior during navigation; re-apply once content is ready.
+    state.floatingPlayerWindow.webContents.once('did-finish-load', () => {
+      const w = state.floatingPlayerWindow
+      if (!w || w.isDestroyed()) return
+      console.info(
+        LOG,
+        'floating player did-finish-load: re-apply macOS all-workspaces / full-screen-visible hints'
+      )
+      applyMacFloatOverFullScreenWorkspaces(w)
+      bumpMacFloatingStack(w)
+    })
     console.info(LOG, 'floating player window geometry', geom)
 
     state.floatingPlayerWindow.on('closed', () => {
@@ -320,6 +350,8 @@ async function handleOpenFloatingPlayer(
     }
     state.floatingPlayerWindow.webContents.send('floating-player:init', opts)
     state.floatingPlayerWindow.show()
+    applyMacFloatOverFullScreenWorkspaces(state.floatingPlayerWindow)
+    bumpMacFloatingStack(state.floatingPlayerWindow)
     console.info(LOG, 'floating player opened')
     return { ok: true as const }
   } catch (e) {
