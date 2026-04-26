@@ -128,6 +128,26 @@ function bindFloatingPlayerBoundsTracking(win: BrowserWindow): void {
   })
 }
 
+/**
+ * macOS: make the floating player appear on all Spaces, including with other apps in
+ * full screen, and keep a high always-on-top level. No-op on other platforms.
+ */
+function applyMacFloatOverFullScreenWorkspaces(win: BrowserWindow): void {
+  if (process.platform !== 'darwin') return
+  if (win.isDestroyed()) return
+  try {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // Stronger than default "floating" so the child window stacks like Zoom/Teams toolbars.
+    win.setAlwaysOnTop(true, 'pop-up-menu')
+    console.info(
+      LOG,
+      'floating player: macOS setVisibleOnAllWorkspaces + visibleOnFullScreen, alwaysOnTop pop-up-menu'
+    )
+  } catch (e) {
+    console.warn(LOG, 'floating player: applyMacFloatOverFullScreenWorkspaces failed', e)
+  }
+}
+
 /** Stable refs so we can `ipcMain.off` without `removeAllListeners` (safer on Electron 39 ipcMain). */
 function onFloatingClosing(_e: IpcMainEvent, t: unknown): void {
   const n = typeof t === 'number' ? t : Number(t)
@@ -219,6 +239,7 @@ async function handleOpenFloatingPlayer(
         artworkUrl: opts.artworkUrl
       }
       win.webContents.send('floating-player:init', payload)
+      applyMacFloatOverFullScreenWorkspaces(win)
       win.show()
       console.info(LOG, 'openFloatingPlayer: hot-swap (reuse existing window)', {
         urlSample: opts.url.slice(0, 80)
@@ -254,6 +275,7 @@ async function handleOpenFloatingPlayer(
       }
     })
     bindFloatingPlayerBoundsTracking(state.floatingPlayerWindow)
+    applyMacFloatOverFullScreenWorkspaces(state.floatingPlayerWindow)
     console.info(LOG, 'floating player window geometry', geom)
 
     state.floatingPlayerWindow.on('closed', () => {
