@@ -84,6 +84,11 @@ export type FloatingPlayerOpenPayload = {
   playing: boolean
   /** Episode sidecar or podcast show cover (loopback URLs); shown when audio has no video track. */
   artworkUrl?: string | null
+  /**
+   * Electron: hot-swap media in the existing floating `BrowserWindow` instead of closing and
+   * creating a new one (keeps on-screen position). Ignored if no window exists; full open then.
+   */
+  reuseExisting?: boolean
 }
 
 /** Main window receives this when the user closes the floating player (not when the track ends). */

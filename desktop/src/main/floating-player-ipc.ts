@@ -2,6 +2,7 @@ import { existsSync } from 'fs'
 import {
   BrowserWindow,
   ipcMain,
+  screen,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   type WebContents
@@ -22,6 +23,111 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 /** Preload bundle for the floating player child window (must exist beside main in out/preload). */
 export const FLOATING_PLAYER_PRELOAD = join(__dirname, '../preload/floatingPlayer.js')
 
+const FLOATING_DEFAULT_WIDTH = 560
+const FLOATING_DEFAULT_HEIGHT = 428
+const FLOATING_MIN_WIDTH = 200
+const FLOATING_MIN_HEIGHT = 150
+const FLOATING_BOUNDS_DEBOUNCE_MS = 120
+/** Inset from screen edges for first PiP each session — bottom-right-ish, not flush to the pixel. */
+const FLOATING_CORNER_MARGIN = 24
+
+let floatingBoundsDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * First PiP open in a session (no remembered position): toward the bottom-right of the display
+ * that holds the main window (else primary), inset from `workArea` so Dock / menu bar stay clear.
+ */
+function getFloatingPlayerDefaultBottomRightishOrigin(winWidth: number, winHeight: number): {
+  x: number
+  y: number
+} {
+  let display = screen.getPrimaryDisplay()
+  const main = state.mainWindow
+  if (main && !main.isDestroyed()) {
+    try {
+      display = screen.getDisplayMatching(main.getBounds())
+    } catch {
+      /* keep primary */
+    }
+  }
+  const wa = display.workArea
+  const m = FLOATING_CORNER_MARGIN
+  let x = wa.x + wa.width - winWidth - m
+  let y = wa.y + wa.height - winHeight - m
+  if (x < wa.x + m) {
+    x = wa.x + m
+  }
+  if (y < wa.y + m) {
+    y = wa.y + m
+  }
+  return { x: Math.round(x), y: Math.round(y) }
+}
+
+/** Save PiP window bounds into process memory only (cleared when the app exits). */
+function persistFloatingPlayerBoundsFromWindow(win: BrowserWindow | null): void {
+  if (!win || win.isDestroyed()) return
+  try {
+    const b = win.getBounds()
+    if (b.width >= FLOATING_MIN_WIDTH && b.height >= FLOATING_MIN_HEIGHT) {
+      state.floatingPlayerBoundsSession = {
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height
+      }
+      console.debug(LOG, 'floating player session bounds', state.floatingPlayerBoundsSession)
+    }
+  } catch (e) {
+    console.warn(LOG, 'persistFloatingPlayerBoundsFromWindow', e)
+  }
+}
+
+function scheduleFloatingPlayerBoundsSave(win: BrowserWindow): void {
+  if (floatingBoundsDebounceTimer) clearTimeout(floatingBoundsDebounceTimer)
+  floatingBoundsDebounceTimer = setTimeout(() => {
+    floatingBoundsDebounceTimer = null
+    persistFloatingPlayerBoundsFromWindow(win)
+  }, FLOATING_BOUNDS_DEBOUNCE_MS)
+}
+
+/** Apply last in-session bounds when creating a new floating window (cold open / replace). */
+function getFloatingPlayerWindowCreateOptions(): {
+  width: number
+  height: number
+  x: number
+  y: number
+} {
+  const b = state.floatingPlayerBoundsSession
+  const width =
+    b && Number.isFinite(b.width) && b.width >= FLOATING_MIN_WIDTH
+      ? Math.round(b.width)
+      : FLOATING_DEFAULT_WIDTH
+  const height =
+    b && Number.isFinite(b.height) && b.height >= FLOATING_MIN_HEIGHT
+      ? Math.round(b.height)
+      : FLOATING_DEFAULT_HEIGHT
+  if (b && Number.isFinite(b.x) && Number.isFinite(b.y)) {
+    return { width, height, x: Math.round(b.x), y: Math.round(b.y) }
+  }
+  const corner = getFloatingPlayerDefaultBottomRightishOrigin(width, height)
+  return { width, height, x: corner.x, y: corner.y }
+}
+
+function bindFloatingPlayerBoundsTracking(win: BrowserWindow): void {
+  const onMoveResize = (): void => {
+    scheduleFloatingPlayerBoundsSave(win)
+  }
+  win.on('move', onMoveResize)
+  win.on('resize', onMoveResize)
+  win.once('close', () => {
+    if (floatingBoundsDebounceTimer) {
+      clearTimeout(floatingBoundsDebounceTimer)
+      floatingBoundsDebounceTimer = null
+    }
+    persistFloatingPlayerBoundsFromWindow(win)
+  })
+}
+
 /** Stable refs so we can `ipcMain.off` without `removeAllListeners` (safer on Electron 39 ipcMain). */
 function onFloatingClosing(_e: IpcMainEvent, t: unknown): void {
   const n = typeof t === 'number' ? t : Number(t)
@@ -30,10 +136,10 @@ function onFloatingClosing(_e: IpcMainEvent, t: unknown): void {
 }
 
 function onFloatingEnded(): void {
-  console.info(LOG, 'floating-player:ended')
-  state.floatingPlayerCloseReason = 'ended'
-  if (state.floatingPlayerWindow && !state.floatingPlayerWindow.isDestroyed()) {
-    state.floatingPlayerWindow.close()
+  console.info(LOG, 'floating-player:ended (notify main; keep window for hot-swap)')
+  const wc = state.mainWindow?.webContents
+  if (wc && !wc.isDestroyed()) {
+    wc.send('playback:floatingPlayerEnded')
   }
 }
 
@@ -99,9 +205,30 @@ async function handleOpenFloatingPlayer(
       })
       return { ok: false as const, error: 'url not allowed (expected loopback media server URL)' }
     }
-    if (state.floatingPlayerWindow && !state.floatingPlayerWindow.isDestroyed()) {
+    const win = state.floatingPlayerWindow
+    if (win && !win.isDestroyed() && opts.reuseExisting) {
+      state.floatingPlayerResumePlaying = Boolean(opts.playing)
+      const ct = opts.currentTime
+      state.lastFloatingPlayerReportedTime =
+        typeof ct === 'number' && Number.isFinite(ct) ? ct : 0
+      const payload: FloatingPlayerOpenPayload = {
+        url: opts.url,
+        currentTime: opts.currentTime,
+        volume: opts.volume,
+        playing: opts.playing,
+        artworkUrl: opts.artworkUrl
+      }
+      win.webContents.send('floating-player:init', payload)
+      win.show()
+      console.info(LOG, 'openFloatingPlayer: hot-swap (reuse existing window)', {
+        urlSample: opts.url.slice(0, 80)
+      })
+      return { ok: true as const }
+    }
+    if (win && !win.isDestroyed()) {
       state.floatingPlayerCloseReason = 'replace'
       state.floatingPlayerSkipNextClosedNotify = true
+      persistFloatingPlayerBoundsFromWindow(state.floatingPlayerWindow)
       state.floatingPlayerWindow.close()
       state.floatingPlayerWindow = null
     }
@@ -112,9 +239,9 @@ async function handleOpenFloatingPlayer(
 
     const devBase = process.env['ELECTRON_RENDERER_URL']
     const floatingHtmlPath = join(__dirname, '../renderer/floating-player.html')
+    const geom = getFloatingPlayerWindowCreateOptions()
     state.floatingPlayerWindow = new BrowserWindow({
-      width: 560,
-      height: 428,
+      ...geom,
       title: 'Picture in picture',
       alwaysOnTop: true,
       autoHideMenuBar: true,
@@ -126,6 +253,8 @@ async function handleOpenFloatingPlayer(
         webSecurity: false
       }
     })
+    bindFloatingPlayerBoundsTracking(state.floatingPlayerWindow)
+    console.info(LOG, 'floating player window geometry', geom)
 
     state.floatingPlayerWindow.on('closed', () => {
       const reason = state.floatingPlayerCloseReason
@@ -225,6 +354,7 @@ async function handleCloseFloatingPlayer(): Promise<void> {
     } catch {
       /* ignore */
     }
+    persistFloatingPlayerBoundsFromWindow(state.floatingPlayerWindow)
     state.floatingPlayerWindow.close()
   }
 }

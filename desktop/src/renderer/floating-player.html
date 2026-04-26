@@ -425,9 +425,17 @@
           }
         })
 
-        window.floatingPlayer.onInit(function (p) {
-          console.log('[floating-player] init', {
-            urlLen: p.url?.length,
+        /** Abort per-track listeners so hot-swap does not double-fire `ended` from the same video element. */
+        var perTrackAborter = null
+
+        function applyPayload(p) {
+          if (perTrackAborter) {
+            perTrackAborter.abort()
+          }
+          perTrackAborter = new AbortController()
+          var signal = perTrackAborter.signal
+          console.log('[floating-player] init / hot-swap', {
+            urlLen: p && p.url ? p.url.length : 0,
             t: p.currentTime,
             playing: p.playing,
             hasArtwork: Boolean(p.artworkUrl)
@@ -435,7 +443,6 @@
           v.volume = typeof p.volume === 'number' ? p.volume : 1
           v.poster = typeof p.artworkUrl === 'string' ? p.artworkUrl : ''
 
-          /** Match main window: show artwork until a real video frame exists. */
           function syncArtworkLayer() {
             if (!art) return
             var url = typeof p.artworkUrl === 'string' ? p.artworkUrl : ''
@@ -468,13 +475,19 @@
             art.src = p.artworkUrl
             art.style.display = 'block'
             v.classList.add('floating-audio-only')
+          } else if (art) {
+            art.removeAttribute('src')
+            art.style.display = 'none'
+            v.classList.remove('floating-audio-only')
           }
 
           v.src = p.url
           function onMeta() {
-            v.removeEventListener('loadedmetadata', onMeta)
             try {
-              v.currentTime = Math.min(Math.max(0, p.currentTime), v.duration > 0 ? v.duration : p.currentTime)
+              v.currentTime = Math.min(
+                Math.max(0, p.currentTime),
+                v.duration > 0 ? v.duration : p.currentTime
+              )
             } catch (e) {
               console.warn('[floating-player] seek after metadata', e)
             }
@@ -485,28 +498,50 @@
             sendProgressSync(true)
             syncArtworkLayer()
           }
-          v.addEventListener('loadedmetadata', onMeta)
-          v.addEventListener('resize', syncArtworkLayer)
-          v.addEventListener('error', function () {
-            const msg = v.error ? 'code ' + v.error.code : 'unknown'
-            window.floatingPlayer.error('video error ' + msg)
-          })
-          v.addEventListener('ended', function () {
-            window.floatingPlayer.ended()
-          })
-          v.addEventListener('timeupdate', function () {
-            refreshTimelineFromVideo()
-            sendProgressSync(false)
-          })
-          v.addEventListener('seeked', function () {
-            refreshTimelineFromVideo()
-            sendProgressSync(true)
-          })
-          v.addEventListener('durationchange', function () {
-            console.log('[floating-player] durationchange', { d: v.duration })
-            refreshTimelineFromVideo()
-          })
-        })
+          v.addEventListener('loadedmetadata', onMeta, { once: true, signal: signal })
+          v.addEventListener('resize', syncArtworkLayer, { signal: signal })
+          v.addEventListener(
+            'error',
+            function onVideoError() {
+              var msg = v.error ? 'code ' + v.error.code : 'unknown'
+              window.floatingPlayer.error('video error ' + msg)
+            },
+            { signal: signal }
+          )
+          v.addEventListener(
+            'ended',
+            function onVideoEnded() {
+              window.floatingPlayer.ended()
+            },
+            { signal: signal }
+          )
+          v.addEventListener(
+            'timeupdate',
+            function onTimeupdate() {
+              refreshTimelineFromVideo()
+              sendProgressSync(false)
+            },
+            { signal: signal }
+          )
+          v.addEventListener(
+            'seeked',
+            function onSeeked() {
+              refreshTimelineFromVideo()
+              sendProgressSync(true)
+            },
+            { signal: signal }
+          )
+          v.addEventListener(
+            'durationchange',
+            function onDurationchange() {
+              console.log('[floating-player] durationchange', { d: v.duration })
+              refreshTimelineFromVideo()
+            },
+            { signal: signal }
+          )
+        }
+
+        window.floatingPlayer.onInit(applyPayload)
 
         bBack.onclick = function () {
           v.currentTime = Math.max(0, v.currentTime - SEEK)

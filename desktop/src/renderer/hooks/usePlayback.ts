@@ -373,7 +373,8 @@ export function usePlayback(
                   currentTime: v.currentTime,
                   volume: v.volume,
                   playing: true,
-                  artworkUrl
+                  artworkUrl,
+                  reuseExisting: true
                 })
                 if (!openR || typeof openR !== 'object' || !('ok' in openR) || !openR.ok) {
                   const err =
@@ -1324,6 +1325,9 @@ export function usePlayback(
       if (!continued) {
         pendingFloatingReopenRef.current = false
         setFloatingPlayerActive(false)
+        /** Main no longer auto-closes the floating window on `ended`; close when the queue is done. */
+        void window.ytdl.closeFloatingPlayer()
+        console.log('[usePlayback] floating PiP: playlist finished — closed floating window')
       }
     })
     const offErr = window.ytdl.onFloatingPlayerError((p) => {

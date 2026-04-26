@@ -9,10 +9,13 @@ import type {
  * Minimal bridge for the floating-player.html window only (separate preload bundle).
  */
 contextBridge.exposeInMainWorld('floatingPlayer', {
-  onInit: (cb: (p: FloatingPlayerOpenPayload) => void): void => {
-    ipcRenderer.once('floating-player:init', (_e, p: FloatingPlayerOpenPayload) => {
+  /** First open and each hot-swap re-send the same `floating-player:init` channel. */
+  onInit: (cb: (p: FloatingPlayerOpenPayload) => void): (() => void) => {
+    const listener = (_: Electron.IpcRendererEvent, p: FloatingPlayerOpenPayload): void => {
       cb(p)
-    })
+    }
+    ipcRenderer.on('floating-player:init', listener)
+    return () => ipcRenderer.removeListener('floating-player:init', listener)
   },
   /** Main window transport bar → floating `<video>` (seek / play / pause). */
   onControl: (cb: (p: FloatingPlayerControlPayload) => void): (() => void) => {
