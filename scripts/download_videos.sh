@@ -12,6 +12,7 @@ YTDLP_COMMON=(
     --playlist-items 1-10
     --download-archive downloaded.txt
     --ignore-errors
+    --no-write-playlist-metafiles
     --remote-components ejs:github
     --write-info-json
     --embed-metadata
@@ -56,6 +57,7 @@ if [[ "$1" == "ytrec" ]]; then
         --cookies-from-browser firefox \
         --remote-components ejs:github \
         --playlist-items 1-"$count" \
+        --no-write-playlist-metafiles \
         --write-info-json \
         --embed-metadata \
         --write-thumbnail \
