@@ -30,11 +30,17 @@ export default function App(): React.ReactElement {
   const [activePage, setActivePage] = useState<Page>('library')
   const [queueOpen, setQueueOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /** Drives app-level backdrop blur; overlay must sit above <Player /> in the tree, not inside <Sidebar />. */
+  const [sidebarExpanded, setSidebarExpanded] = useState(false)
 
   useEffect(() => {
     console.log('[App] loading initial data directory')
     void window.ytdl.getDataDir().then(setDataDir)
   }, [])
+
+  useEffect(() => {
+    console.info('[App] sidebar main-column blur', { active: sidebarExpanded })
+  }, [sidebarExpanded])
 
   /* ── Hooks ── */
   const sync = useSync()
@@ -388,6 +394,7 @@ export default function App(): React.ReactElement {
         activePage={activePage}
         onNavigate={setActivePage}
         onOpenSettings={() => setSettingsOpen(true)}
+        onExpandedChange={setSidebarExpanded}
       />
 
       {/* Pages + right video; transport / seek bar spans full width below (not under sidebar). */}
@@ -427,6 +434,15 @@ export default function App(): React.ReactElement {
           </AnimatePresence>
         </div>
       </Player>
+
+      {/* Blur over library + video only when sidebar hover-expanded; here so backdrop-filter samples <Player />. */}
+      <motion.div
+        aria-hidden={!sidebarExpanded}
+        className="sidebar-content-blur pointer-events-none fixed top-0 right-0 bottom-0 left-14 z-20"
+        initial={false}
+        animate={{ opacity: sidebarExpanded ? 1 : 0 }}
+        transition={{ duration: 0.42, ease: [0.25, 0.1, 0.25, 1] }}
+      />
 
       {/* Queue drawer */}
       <QueueDrawer
