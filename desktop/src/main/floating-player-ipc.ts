@@ -188,6 +188,17 @@ function onFloatingError(_e: IpcMainEvent, payload: { message?: string }): void 
 }
 
 /** Keep last known time + play state so `closed` is accurate even if `closing` IPC is missed. */
+/** Title bar / OS switcher label; falls back when the renderer omits {@link FloatingPlayerOpenPayload.displayTitle}. */
+function resolveFloatingPlayerWindowTitle(opts: FloatingPlayerOpenPayload): string {
+  const raw = opts.displayTitle
+  const t = typeof raw === 'string' ? raw.trim() : ''
+  if (t.length > 0) {
+    const max = 512
+    return t.length > max ? `${t.slice(0, max)}…` : t
+  }
+  return 'Picture in picture'
+}
+
 function onFloatingSync(_e: IpcMainEvent, raw: unknown): void {
   const p = raw as Partial<FloatingPlayerSyncPayload>
   const t = typeof p.currentTime === 'number' && Number.isFinite(p.currentTime) ? p.currentTime : 0
@@ -254,14 +265,22 @@ async function handleOpenFloatingPlayer(
         currentTime: opts.currentTime,
         volume: opts.volume,
         playing: opts.playing,
+        displayTitle: opts.displayTitle,
         artworkUrl: opts.artworkUrl
+      }
+      const winTitle = resolveFloatingPlayerWindowTitle(opts)
+      try {
+        win.setTitle(winTitle)
+      } catch (e) {
+        console.warn(LOG, 'openFloatingPlayer hot-swap setTitle', e)
       }
       win.webContents.send('floating-player:init', payload)
       applyMacFloatOverFullScreenWorkspaces(win)
       win.show()
       bumpMacFloatingStack(win)
       console.info(LOG, 'openFloatingPlayer: hot-swap (reuse existing window)', {
-        urlSample: opts.url.slice(0, 80)
+        urlSample: opts.url.slice(0, 80),
+        displayTitle: winTitle.slice(0, 80)
       })
       return { ok: true as const }
     }
@@ -280,9 +299,10 @@ async function handleOpenFloatingPlayer(
     const devBase = process.env['ELECTRON_RENDERER_URL']
     const floatingHtmlPath = join(__dirname, '../renderer/floating-player.html')
     const geom = getFloatingPlayerWindowCreateOptions()
+    const initialTitle = resolveFloatingPlayerWindowTitle(opts)
     state.floatingPlayerWindow = new BrowserWindow({
       ...geom,
-      title: 'Picture in picture',
+      title: initialTitle,
       alwaysOnTop: true,
       autoHideMenuBar: true,
       webPreferences: {
@@ -349,10 +369,15 @@ async function handleOpenFloatingPlayer(
       throw new Error(`floating-player.html not found at ${floatingHtmlPath}`)
     }
     state.floatingPlayerWindow.webContents.send('floating-player:init', opts)
+    try {
+      state.floatingPlayerWindow.setTitle(initialTitle)
+    } catch (e) {
+      console.warn(LOG, 'floating player setTitle after init', e)
+    }
     state.floatingPlayerWindow.show()
     applyMacFloatOverFullScreenWorkspaces(state.floatingPlayerWindow)
     bumpMacFloatingStack(state.floatingPlayerWindow)
-    console.info(LOG, 'floating player opened')
+    console.info(LOG, 'floating player opened', { displayTitle: initialTitle.slice(0, 80) })
     return { ok: true as const }
   } catch (e) {
     console.error(LOG, 'playback:openFloatingPlayer', e)

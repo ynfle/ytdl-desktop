@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Playing</title>
+    <title>Picture in picture</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -434,11 +434,17 @@
           }
           perTrackAborter = new AbortController()
           var signal = perTrackAborter.signal
+          var docTitle =
+            p && typeof p.displayTitle === 'string' && p.displayTitle.trim()
+              ? p.displayTitle.trim()
+              : 'Picture in picture'
+          document.title = docTitle
           console.log('[floating-player] init / hot-swap', {
             urlLen: p && p.url ? p.url.length : 0,
             t: p.currentTime,
             playing: p.playing,
-            hasArtwork: Boolean(p.artworkUrl)
+            hasArtwork: Boolean(p.artworkUrl),
+            displayTitle: docTitle.slice(0, 80)
           })
           v.volume = typeof p.volume === 'number' ? p.volume : 1
           v.poster = typeof p.artworkUrl === 'string' ? p.artworkUrl : ''
@@ -483,6 +489,7 @@
 
           v.src = p.url
           function onMeta() {
+            document.title = docTitle
             try {
               v.currentTime = Math.min(
                 Math.max(0, p.currentTime),

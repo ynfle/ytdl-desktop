@@ -5,6 +5,7 @@ import type {
   PlaybackSpotSnapshot,
   PodcastInfoRow
 } from '../../../shared/ytdl-api'
+import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 import { mountDocumentPipChrome } from '../lib/documentPipChrome'
 import { parseLibraryRelPath } from './useLibrary'
 
@@ -62,6 +63,26 @@ async function resolveFloatingArtworkUrl(
     return logo
   }
   return null
+}
+
+/** Prefer embedded / sidecar title; else humanized restrict-filename (spaces, not raw underscores). */
+async function fetchPlaybackDisplayTitle(relPath: string): Promise<string> {
+  const fallback = humanizeRestrictFilename(parseLibraryRelPath(relPath).fileName)
+  try {
+    const r = await window.ytdl.getEmbeddedMediaTitle(relPath)
+    if (r.ok && typeof r.title === 'string') {
+      const t = r.title.trim()
+      if (t.length > 0) {
+        console.log('[usePlayback] display title from main', { relPath, titleSample: t.slice(0, 80) })
+        return t
+      }
+    } else if (!r.ok) {
+      console.warn('[usePlayback] getEmbeddedMediaTitle not ok', { relPath, error: 'error' in r ? r.error : undefined })
+    }
+  } catch (e) {
+    console.warn('[usePlayback] getEmbeddedMediaTitle threw', relPath, e)
+  }
+  return fallback
 }
 
 /**
@@ -395,12 +416,14 @@ export function usePlayback(
                 libraryRef.current,
                 podcastRowsRef.current
               )
+              const displayTitle = await fetchPlaybackDisplayTitle(relPath)
               try {
                 const openR = await window.ytdl.openFloatingPlayer({
                   url,
                   currentTime: v.currentTime,
                   volume: v.volume,
                   playing: true,
+                  displayTitle,
                   artworkUrl,
                   reuseExisting: true
                 })
@@ -936,9 +959,13 @@ export function usePlayback(
         relForArt != null
           ? await resolveFloatingArtworkUrl(relForArt, libraryRef.current, podcastRowsRef.current)
           : null
+      const relForTitle = currentRelRef.current
+      const displayTitle =
+        relForTitle != null ? await fetchPlaybackDisplayTitle(relForTitle) : undefined
       console.log('[usePlayback] enterPip: opening Electron floating player (seek controls)', {
         urlSample: url.slice(0, 80),
-        hasArtwork: Boolean(artworkUrl)
+        hasArtwork: Boolean(artworkUrl),
+        displayTitle: displayTitle ?? null
       })
       try {
         const r = await window.ytdl.openFloatingPlayer({
@@ -946,6 +973,7 @@ export function usePlayback(
           currentTime: v.currentTime,
           volume: v.volume,
           playing: wasPlaying,
+          displayTitle,
           artworkUrl
         })
         if (!r || typeof r !== 'object' || !('ok' in r) || !r.ok) {
@@ -1398,10 +1426,15 @@ export function usePlayback(
       navigator.mediaSession.playbackState = 'none'
       return
     }
-    const title = parseLibraryRelPath(currentRel).fileName
-    navigator.mediaSession.metadata = new MediaMetadata({ title })
-    console.log('[usePlayback] mediaSession metadata', { title })
+    let cancelled = false
+    void (async (): Promise<void> => {
+      const title = await fetchPlaybackDisplayTitle(currentRel)
+      if (cancelled) return
+      navigator.mediaSession.metadata = new MediaMetadata({ title })
+      console.log('[usePlayback] mediaSession metadata', { title: title.slice(0, 80) })
+    })()
     return () => {
+      cancelled = true
       navigator.mediaSession.metadata = null
     }
   }, [currentRel])

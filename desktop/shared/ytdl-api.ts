@@ -82,6 +82,8 @@ export type FloatingPlayerOpenPayload = {
   currentTime: number
   volume: number
   playing: boolean
+  /** Shown in the floating window title bar (e.g. library file name without path). */
+  displayTitle?: string | null
   /** Episode sidecar or podcast show cover (loopback URLs); shown when audio has no video track. */
   artworkUrl?: string | null
   /**
@@ -118,6 +120,15 @@ export type YtdlApi = {
   pickDataDir: () => Promise<string | null>
   scanLibrary: () => Promise<{ ok: boolean; videos?: LibraryVideo[]; error?: string }>
   mediaUrl: (relPath: string) => Promise<{ ok: boolean; url?: string; error?: string }>
+  /**
+   * Embedded title from tags / container / yt-dlp `.info.json` / ffprobe; if none, a **humanized**
+   * display string from the filename (underscores → spaces). Never empty when `ok`.
+   */
+  getEmbeddedMediaTitle: (relPath: string) => Promise<{
+    ok: boolean
+    title?: string | null
+    error?: string
+  }>
   /** Remove one library media file under the data root (permanent delete). */
   deleteLibraryMedia: (relPath: string) => Promise<{ ok: boolean; error?: string }>
   syncChannels: () => Promise<{ ok: boolean; error?: string }>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, Square, PictureInPicture2, SkipForward, ListMusic, Music2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { FloatingPlayerSyncPayload } from '../../../shared/ytdl-api'
+import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 import { parseLibraryRelPath } from '../hooks/useLibrary'
 import { TransportThumb } from './MediaThumbSlot'
 
@@ -318,7 +319,7 @@ function usePlayerChrome({
     v.addEventListener('resize', onResize)
     return () => v.removeEventListener('resize', onResize)
   }, [currentRel, videoRef])
-  const fileName = currentRel ? parseLibraryRelPath(currentRel).fileName : null
+  const fileName = currentRel ? humanizeRestrictFilename(parseLibraryRelPath(currentRel).fileName) : null
   /** Electron floating PiP: transport drives child window, not the paused main `<video>`. */
   const remoteFloatingTransport = Boolean(floatingPlayerActive || floatingSync)
 

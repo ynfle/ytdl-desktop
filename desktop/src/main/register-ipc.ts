@@ -7,6 +7,7 @@ import { registerChannelsIpc } from './register-channels-ipc'
 import { registerPlaylistsIpc } from './register-playlists-ipc'
 import {
   registerLibraryDeleteMediaIpc,
+  registerLibraryEmbeddedTitleIpc,
   registerLibraryMediaUrlIpc,
   registerLibraryScanIpc
 } from './register-library-ipc'
@@ -28,6 +29,7 @@ export function registerAppIpc(): void {
   registerPlaylistsIpc()
   registerShellIpc()
   registerLibraryMediaUrlIpc()
+  registerLibraryEmbeddedTitleIpc()
   registerLibraryDeleteMediaIpc()
   registerSyncChannelsYtrecIpc()
   registerPodcastsIpc()

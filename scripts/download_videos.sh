@@ -13,6 +13,8 @@ YTDLP_COMMON=(
     --download-archive downloaded.txt
     --ignore-errors
     --remote-components ejs:github
+    --write-info-json
+    --embed-metadata
     -f 'bestvideo[height<=720]+bestaudio/best[height<=720]'
     --write-thumbnail
     --embed-thumbnail
@@ -54,6 +56,8 @@ if [[ "$1" == "ytrec" ]]; then
         --cookies-from-browser firefox \
         --remote-components ejs:github \
         --playlist-items 1-"$count" \
+        --write-info-json \
+        --embed-metadata \
         --write-thumbnail \
         --embed-thumbnail \
         --convert-thumbnails jpg \
