@@ -7,7 +7,7 @@ import { humanizeRestrictFilename } from '../../shared/humanize-restrict-filenam
 import { readEmbeddedMediaTitle, ytDlpInfoJsonSidecarPaths } from './media-embedded-title'
 import { getMediaAuth } from './media-server'
 import { scanLibraryVideos } from './library-scan'
-import { unlinkSidecarThumbnailsBesideMedia } from './library-thumbnail'
+import { unlinkSidecarThumbnailsBesideMedia, unlinkYtDlpInfoJsonSidecarsBesideMedia } from './library-thumbnail'
 
 /** In-memory cache: re-read tags only when `mtimeMs` changes. Bump schema when title logic changes. */
 const EMBEDDED_TITLE_CACHE_SCHEMA = 4
@@ -154,6 +154,7 @@ export function registerLibraryDeleteMediaIpc(): void {
       await fs.unlink(realFull)
       embeddedTitleCache.delete(embeddedTitleCacheKey(relPath))
       await unlinkSidecarThumbnailsBesideMedia(root, realFull)
+      await unlinkYtDlpInfoJsonSidecarsBesideMedia(root, realFull)
       console.info(LOG, 'library:deleteMedia ok', relPath)
       return { ok: true as const }
     } catch (e) {

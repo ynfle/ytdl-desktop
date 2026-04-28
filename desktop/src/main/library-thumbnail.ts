@@ -2,6 +2,7 @@ import { join, normalize, parse, relative, sep } from 'path'
 import { promises as fs } from 'fs'
 import { isPathInsideRoot } from './config-store'
 import { LOG } from './constants'
+import { ytDlpInfoJsonSidecarPaths } from './media-embedded-title'
 
 /** Sidecar extensions yt-dlp may leave next to the media file (jpg after --convert-thumbnails). */
 const THUMB_EXT_ORDER = ['.jpg', '.jpeg', '.webp', '.png'] as const
@@ -66,6 +67,45 @@ export async function unlinkSidecarThumbnailsBesideMedia(
         continue
       }
       console.warn(LOG, 'library thumb sidecar delete failed', thumbFull, e)
+    }
+  }
+}
+
+/**
+ * Remove yt-dlp `--write-info-json` sidecars next to a library media file (`Video.mp4.info.json`, etc.).
+ * Best-effort: logs failures but does not throw (primary media delete already succeeded).
+ */
+export async function unlinkYtDlpInfoJsonSidecarsBesideMedia(
+  dataRoot: string,
+  mediaRealPath: string
+): Promise<void> {
+  for (const infoFull of ytDlpInfoJsonSidecarPaths(mediaRealPath)) {
+    const normalized = normalize(infoFull)
+    if (!isPathInsideRoot(dataRoot, normalized)) {
+      console.warn(LOG, 'library info.json sidecar delete skipped (outside root)', normalized)
+      continue
+    }
+    try {
+      const st = await fs.lstat(normalized)
+      if (!st.isFile()) {
+        continue
+      }
+      const realInfo = await fs.realpath(normalized)
+      if (!isPathInsideRoot(dataRoot, realInfo)) {
+        console.warn(LOG, 'library info.json sidecar delete skipped (symlink escapes root)', realInfo)
+        continue
+      }
+      await fs.unlink(realInfo)
+      console.info(
+        LOG,
+        'library info.json sidecar deleted',
+        relative(dataRoot, realInfo).split(sep).join('/')
+      )
+    } catch (e) {
+      if (isEnoent(e)) {
+        continue
+      }
+      console.warn(LOG, 'library info.json sidecar delete failed', normalized, e)
     }
   }
 }
