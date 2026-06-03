@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChannelInfoRow, LibraryVideo, PodcastInfoRow } from '../../../shared/ytdl-api'
+import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 
 /* ── Helpers ── */
 
@@ -39,6 +40,20 @@ function parseLibraryRelPath(relPath: string): {
   return { groupKey: '__root__', channelFolder: parts[0] ?? relPath, fileName }
 }
 export { parseLibraryRelPath }
+
+/** Row label: scan `displayTitle` (from `.info.json` when present), else humanized filename. */
+export function libraryItemDisplayTitle(item: LibraryVideo): string {
+  const t = item.displayTitle.trim()
+  if (t.length > 0) return t
+  return humanizeRestrictFilename(parseLibraryRelPath(item.relPath).fileName)
+}
+
+/** Lookup display title for a library relPath (scan cache), else humanized filename. */
+export function displayTitleForRelPath(library: LibraryVideo[], relPath: string): string {
+  const hit = library.find((v) => v.relPath === relPath)
+  if (hit) return libraryItemDisplayTitle(hit)
+  return humanizeRestrictFilename(parseLibraryRelPath(relPath).fileName)
+}
 
 function normFolder(s: string): string {
   return s.toLowerCase().replace(/_+/g, ' ').trim()

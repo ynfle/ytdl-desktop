@@ -1,0 +1,4 @@
+# Copy this file to your data folder as podcasts.txt.
+# One RSS feed URL per line. Blank lines and # comments are ignored.
+
+https://feeds.simplecast.com/54nAGcIl

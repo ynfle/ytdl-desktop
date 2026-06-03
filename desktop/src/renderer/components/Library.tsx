@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { motion } from 'motion/react'
 import { Play, Plus, Film, Trash2 } from 'lucide-react'
 import type { LibraryVideoGroup } from '../hooks/useLibrary'
-import { parseLibraryRelPath } from '../hooks/useLibrary'
+import { libraryItemDisplayTitle } from '../hooks/useLibrary'
 import { MediaThumbSlot } from './MediaThumbSlot'
 import { ChannelAvatar } from './ChannelAvatar'
 
@@ -100,7 +100,7 @@ export default function LibraryPage({
             {/* File list */}
             <ul className="divide-y divide-border">
               {group.items.map((item) => {
-                const { fileName } = parseLibraryRelPath(item.relPath)
+                const label = libraryItemDisplayTitle(item)
                 const isActive = item.relPath === currentRel
                 return (
                   <li
@@ -133,9 +133,10 @@ export default function LibraryPage({
                     </div>
 
                     <span
-                      className={`flex-1 text-[11px] font-mono truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text'}`}
+                      className={`flex-1 text-[11px] truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text'}`}
+                      title={label}
                     >
-                      {fileName}
+                      {label}
                     </span>
                     <span className="text-[10px] text-text-muted tabular-nums shrink-0 font-mono">
                       {relativeTime(item.mtimeMs)}

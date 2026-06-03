@@ -5,6 +5,8 @@ export type LibraryVideo = {
   size: number
   /** yt-dlp sidecar image next to the media file, when present (e.g. same title, .jpg). */
   thumbRelPath: string | null
+  /** From adjacent `.info.json` when present; otherwise humanized filename (no path). */
+  displayTitle: string
 }
 
 /** One row from channels.txt with optional title resolved via yt-dlp (no download). */

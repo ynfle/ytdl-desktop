@@ -16,6 +16,12 @@
 desktop/node_modules/
 desktop/out/
 desktop/dist/
+
+# Optional local TLS / package-manager overrides (not shared in git)
+desktop/certs/
+desktop/.npmrc
+desktop/bunfig.toml
+desktop/package-lock.json
 *.log
 
 # User data at repository root only

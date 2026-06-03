@@ -4,9 +4,10 @@
   "description": "Desktop UI for local yt-dlp channel sync, library, and playback",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "dev": "bun ./scripts/run-electron-vite.mjs dev",
     "build": "electron-vite build",
-    "start": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
+    "start": "bun ./scripts/run-electron-vite.mjs preview",
+    "postinstall": "bun ./scripts/run-postinstall.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {

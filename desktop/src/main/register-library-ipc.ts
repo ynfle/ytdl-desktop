@@ -10,7 +10,7 @@ import { scanLibraryVideos } from './library-scan'
 import { unlinkSidecarThumbnailsBesideMedia, unlinkYtDlpInfoJsonSidecarsBesideMedia } from './library-thumbnail'
 
 /** In-memory cache: re-read tags only when `mtimeMs` changes. Bump schema when title logic changes. */
-const EMBEDDED_TITLE_CACHE_SCHEMA = 4
+const EMBEDDED_TITLE_CACHE_SCHEMA = 5
 const embeddedTitleCache = new Map<string, { mtimeMs: number; title: string | null }>()
 
 function embeddedTitleCacheKey(relPath: string): string {

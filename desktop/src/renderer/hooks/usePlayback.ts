@@ -5,9 +5,8 @@ import type {
   PlaybackSpotSnapshot,
   PodcastInfoRow
 } from '../../../shared/ytdl-api'
-import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 import { mountDocumentPipChrome } from '../lib/documentPipChrome'
-import { parseLibraryRelPath } from './useLibrary'
+import { displayTitleForRelPath, libraryItemDisplayTitle, parseLibraryRelPath } from './useLibrary'
 
 /** Near-end threshold: drop saved resume so "finished" does not reopen mid-credits. */
 const RESUME_MAX_FRACTION = 0.95
@@ -65,9 +64,21 @@ async function resolveFloatingArtworkUrl(
   return null
 }
 
-/** Prefer embedded / sidecar title; else humanized restrict-filename (spaces, not raw underscores). */
-async function fetchPlaybackDisplayTitle(relPath: string): Promise<string> {
-  const fallback = humanizeRestrictFilename(parseLibraryRelPath(relPath).fileName)
+/** Prefer library scan (`.info.json`); else main-process tags / sidecar; else humanized filename. */
+async function fetchPlaybackDisplayTitle(
+  relPath: string,
+  library: LibraryVideo[]
+): Promise<string> {
+  const fromScan = library.find((v) => v.relPath === relPath)
+  if (fromScan) {
+    const scanned = libraryItemDisplayTitle(fromScan)
+    console.log('[usePlayback] display title from library scan', {
+      relPath,
+      titleSample: scanned.slice(0, 80)
+    })
+    return scanned
+  }
+  const fallback = displayTitleForRelPath(library, relPath)
   try {
     const r = await window.ytdl.getEmbeddedMediaTitle(relPath)
     if (r.ok && typeof r.title === 'string') {
@@ -416,7 +427,7 @@ export function usePlayback(
                 libraryRef.current,
                 podcastRowsRef.current
               )
-              const displayTitle = await fetchPlaybackDisplayTitle(relPath)
+              const displayTitle = await fetchPlaybackDisplayTitle(relPath, libraryRef.current)
               try {
                 const openR = await window.ytdl.openFloatingPlayer({
                   url,
@@ -961,7 +972,9 @@ export function usePlayback(
           : null
       const relForTitle = currentRelRef.current
       const displayTitle =
-        relForTitle != null ? await fetchPlaybackDisplayTitle(relForTitle) : undefined
+        relForTitle != null
+          ? await fetchPlaybackDisplayTitle(relForTitle, libraryRef.current)
+          : undefined
       console.log('[usePlayback] enterPip: opening Electron floating player (seek controls)', {
         urlSample: url.slice(0, 80),
         hasArtwork: Boolean(artworkUrl),
@@ -1428,7 +1441,7 @@ export function usePlayback(
     }
     let cancelled = false
     void (async (): Promise<void> => {
-      const title = await fetchPlaybackDisplayTitle(currentRel)
+      const title = await fetchPlaybackDisplayTitle(currentRel, libraryRef.current)
       if (cancelled) return
       navigator.mediaSession.metadata = new MediaMetadata({ title })
       console.log('[usePlayback] mediaSession metadata', { title: title.slice(0, 80) })

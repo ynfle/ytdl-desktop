@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { X, Play, Trash2, ListMusic } from 'lucide-react'
+import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 import { parseLibraryRelPath } from '../hooks/useLibrary'
 import { MediaThumbSlot } from './MediaThumbSlot'
 
@@ -9,7 +10,7 @@ type StagingRow = { relPath: string; index: number }
 
 type ThumbSlotByRel = ReadonlyMap<
   string,
-  { thumbRelPath: string | null; fallbackImageUrl: string | null }
+  { thumbRelPath: string | null; fallbackImageUrl: string | null; displayTitle: string }
 >
 
 type Props = {
@@ -34,6 +35,7 @@ function QueueRow({
   isActive,
   thumbRelPath,
   fallbackImageUrl,
+  displayTitle,
   onDoubleClick,
   onRemove
 }: {
@@ -42,10 +44,10 @@ function QueueRow({
   isActive: boolean
   thumbRelPath: string | null
   fallbackImageUrl: string | null
+  displayTitle: string
   onDoubleClick: () => void
   onRemove: () => void
 }): ReactElement {
-  const { fileName } = parseLibraryRelPath(relPath)
   return (
     <motion.li
       layout
@@ -72,10 +74,10 @@ function QueueRow({
         )}
       </div>
       <span
-        className={`flex-1 text-[11px] font-mono truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text'}`}
-        title={relPath}
+        className={`flex-1 text-[11px] truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text'}`}
+        title={displayTitle}
       >
-        {fileName}
+        {displayTitle}
       </span>
       <button
         type="button"
@@ -184,7 +186,10 @@ export default function QueueDrawer({
                     {stagingItems.map((row, si) => {
                       const slot = thumbByRel.get(row.relPath) ?? {
                         thumbRelPath: null,
-                        fallbackImageUrl: null
+                        fallbackImageUrl: null,
+                        displayTitle: humanizeRestrictFilename(
+                          parseLibraryRelPath(row.relPath).fileName
+                        )
                       }
                       return (
                         <QueueRow
@@ -194,6 +199,7 @@ export default function QueueDrawer({
                           isActive={row.relPath === currentRel}
                           thumbRelPath={slot.thumbRelPath}
                           fallbackImageUrl={slot.fallbackImageUrl}
+                          displayTitle={slot.displayTitle}
                           onDoubleClick={() => onPlayStagingIndex(row.index)}
                           onRemove={() => onRemoveStagingIndex(row.index)}
                         />
@@ -210,7 +216,10 @@ export default function QueueDrawer({
                         {queued.map((row, i) => {
                           const slot = thumbByRel.get(row.relPath) ?? {
                             thumbRelPath: null,
-                            fallbackImageUrl: null
+                            fallbackImageUrl: null,
+                            displayTitle: humanizeRestrictFilename(
+                              parseLibraryRelPath(row.relPath).fileName
+                            )
                           }
                           return (
                             <QueueRow
@@ -220,6 +229,7 @@ export default function QueueDrawer({
                               isActive={row.relPath === currentRel}
                               thumbRelPath={slot.thumbRelPath}
                               fallbackImageUrl={slot.fallbackImageUrl}
+                              displayTitle={slot.displayTitle}
                               onDoubleClick={() => onPlayPlaylistIndex(row.playlistIndex)}
                               onRemove={() => onRemovePlaylistIndex(row.playlistIndex)}
                             />
@@ -239,7 +249,10 @@ export default function QueueDrawer({
                       {upNext.map((row, i) => {
                         const slot = thumbByRel.get(row.relPath) ?? {
                           thumbRelPath: null,
-                          fallbackImageUrl: null
+                          fallbackImageUrl: null,
+                          displayTitle: humanizeRestrictFilename(
+                            parseLibraryRelPath(row.relPath).fileName
+                          )
                         }
                         return (
                           <QueueRow
@@ -249,6 +262,7 @@ export default function QueueDrawer({
                             isActive={row.relPath === currentRel}
                             thumbRelPath={slot.thumbRelPath}
                             fallbackImageUrl={slot.fallbackImageUrl}
+                            displayTitle={slot.displayTitle}
                             onDoubleClick={() => onPlayPlaylistIndex(row.playlistIndex)}
                             onRemove={() => onRemovePlaylistIndex(row.playlistIndex)}
                           />

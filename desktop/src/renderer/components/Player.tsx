@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, Square, PictureInPicture2, SkipForward, ListMusic, Music2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { FloatingPlayerSyncPayload } from '../../../shared/ytdl-api'
-import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
-import { parseLibraryRelPath } from '../hooks/useLibrary'
 import { TransportThumb } from './MediaThumbSlot'
 
 /** localStorage key for the right-hand video column width (px). */
@@ -250,6 +248,8 @@ export type PlayerProps = {
   onFloatingTogglePlay: () => void
   /** Loopback URL for sidecar thumbnail (inline `<video>` poster until frames decode). */
   posterUrl: string | null
+  /** From library scan / `.info.json` when present; else humanized filename. */
+  currentDisplayTitle: string | null
 }
 
 /** Format seconds to mm:ss or hh:mm:ss. */
@@ -269,6 +269,7 @@ function fmtTime(s: number): string {
 function usePlayerChrome({
   videoRef,
   currentRel,
+  currentDisplayTitle,
   onPlay,
   onStop,
   onPip,
@@ -319,7 +320,7 @@ function usePlayerChrome({
     v.addEventListener('resize', onResize)
     return () => v.removeEventListener('resize', onResize)
   }, [currentRel, videoRef])
-  const fileName = currentRel ? humanizeRestrictFilename(parseLibraryRelPath(currentRel).fileName) : null
+  const trackLabel = currentDisplayTitle
   /** Electron floating PiP: transport drives child window, not the paused main `<video>`. */
   const remoteFloatingTransport = Boolean(floatingPlayerActive || floatingSync)
 
@@ -498,7 +499,7 @@ function usePlayerChrome({
       {/* Track info + scrubber */}
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
         <span className="truncate font-mono text-[11px] leading-tight text-text-secondary">
-          {fileName ?? <span className="text-text-muted">Nothing playing</span>}
+          {trackLabel ?? <span className="text-text-muted">Nothing playing</span>}
         </span>
         <div className="flex items-center gap-2.5">
           <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-text-muted">

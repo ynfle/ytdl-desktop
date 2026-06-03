@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'path'
 import { promisify } from 'util'
 import type { IAudioMetadata } from 'music-metadata'
 import { parseFile } from 'music-metadata'
+import { humanizeRestrictFilename } from '../../shared/humanize-restrict-filename'
 import { LOG } from './constants'
 
 const execFile = promisify(execFileCb)
@@ -49,7 +50,7 @@ export function ytDlpInfoJsonSidecarPaths(mediaAbsPath: string): string[] {
 }
 
 /** yt-dlp `--write-info-json` / default sidecar: `Video.mp4.info.json` (sometimes `Video.info.json`). */
-async function readTitleFromYtDlpInfoJson(mediaAbsPath: string): Promise<string | null> {
+export async function readYtDlpInfoJsonTitle(mediaAbsPath: string): Promise<string | null> {
   for (const p of ytDlpInfoJsonSidecarPaths(mediaAbsPath)) {
     try {
       const raw = await fs.readFile(p, 'utf8')
@@ -57,7 +58,8 @@ async function readTitleFromYtDlpInfoJson(mediaAbsPath: string): Promise<string 
       if (typeof j.title !== 'string') continue
       const t = j.title.trim()
       if (t.length === 0) continue
-      if (isLikelyFilesystemTemplateTitle(t, mediaAbsPath)) continue
+      // Sidecar `title` is authoritative (YouTube/podcast metadata). Do not apply filename-template
+      // heuristics here — restrict-filename stems often normalize to the same key as the real title.
       console.info(LOG, 'readTitleFromYtDlpInfoJson', { json: p.slice(-80), titleLen: t.length })
       return t
     } catch {
@@ -65,6 +67,15 @@ async function readTitleFromYtDlpInfoJson(mediaAbsPath: string): Promise<string 
     }
   }
   return null
+}
+
+/**
+ * Library list label: yt-dlp `.info.json` `title` when present, else humanized restrict-filename stem.
+ */
+export async function resolveLibraryDisplayTitle(mediaAbsPath: string): Promise<string> {
+  const fromJson = await readYtDlpInfoJsonTitle(mediaAbsPath)
+  if (fromJson) return fromJson
+  return humanizeRestrictFilename(basename(mediaAbsPath))
 }
 
 /** Normalize tag values from music-metadata (string, buffer, nested). */
@@ -261,7 +272,7 @@ async function readTitleViaFfprobe(absPath: string): Promise<string | null> {
  * media file (rejecting filename-like handler_name / ©nam copies).
  */
 export async function readEmbeddedMediaTitle(absPath: string): Promise<string | null> {
-  const fromJson = await readTitleFromYtDlpInfoJson(absPath)
+  const fromJson = await readYtDlpInfoJsonTitle(absPath)
   if (fromJson) return fromJson
 
   try {

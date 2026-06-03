@@ -15,7 +15,12 @@ import SettingsModal from './components/SettingsModal'
 import { useSync } from './hooks/useSync'
 import { useChannels } from './hooks/useChannels'
 import { usePlaylists } from './hooks/usePlaylists'
-import { parseLibraryRelPath, useLibrary } from './hooks/useLibrary'
+import {
+  displayTitleForRelPath,
+  libraryItemDisplayTitle,
+  parseLibraryRelPath,
+  useLibrary
+} from './hooks/useLibrary'
 import { usePodcasts } from './hooks/usePodcasts'
 import { usePlayback } from './hooks/usePlayback'
 import { useLoopbackMediaUrl } from './hooks/useLoopbackMediaUrl'
@@ -52,14 +57,29 @@ export default function App(): React.ReactElement {
 
   /** Per-file sidecar thumb + group logo (podcast show / channel avatar) for queue rows. */
   const libraryThumbByRel = useMemo(() => {
-    const m = new Map<string, { thumbRelPath: string | null; fallbackImageUrl: string | null }>()
+    const m = new Map<
+      string,
+      { thumbRelPath: string | null; fallbackImageUrl: string | null; displayTitle: string }
+    >()
     for (const g of lib.libraryGroups) {
       for (const item of g.items) {
-        m.set(item.relPath, { thumbRelPath: item.thumbRelPath, fallbackImageUrl: g.logoUrl })
+        m.set(item.relPath, {
+          thumbRelPath: item.thumbRelPath,
+          fallbackImageUrl: g.logoUrl,
+          displayTitle: libraryItemDisplayTitle(item)
+        })
       }
     }
     return m
   }, [lib.libraryGroups])
+
+  const currentTrackDisplayTitle = useMemo(
+    () =>
+      playback.currentRel != null
+        ? displayTitleForRelPath(lib.library, playback.currentRel)
+        : null,
+    [lib.library, playback.currentRel]
+  )
 
   const currentTrackThumbRel = useMemo(
     () => lib.library.find((v) => v.relPath === playback.currentRel)?.thumbRelPath ?? null,
@@ -202,7 +222,9 @@ export default function App(): React.ReactElement {
     (playlistIndex: number) => {
       const all = [...playback.drawerUpNext, ...playback.drawerQueued]
       const hit = all.find((r) => r.playlistIndex === playlistIndex)
-      const label = hit ? parseLibraryRelPath(hit.relPath).fileName : `queue item (index ${playlistIndex})`
+      const label = hit
+        ? displayTitleForRelPath(lib.library, hit.relPath)
+        : `queue item (index ${playlistIndex})`
       if (!window.confirm(`Remove "${label}" from the queue?`)) {
         console.log('[App] remove queue playlist index cancelled', playlistIndex)
         return
@@ -213,14 +235,17 @@ export default function App(): React.ReactElement {
     [
       playback.drawerQueued,
       playback.drawerUpNext,
-      playback.removeFromPlaylistIndex
+      playback.removeFromPlaylistIndex,
+      lib.library
     ]
   )
 
   const handleRemoveStagingIndex = useCallback(
     (index: number) => {
       const hit = playback.drawerStagingItems.find((r) => r.index === index)
-      const label = hit ? parseLibraryRelPath(hit.relPath).fileName : `staging item ${index}`
+      const label = hit
+        ? displayTitleForRelPath(lib.library, hit.relPath)
+        : `staging item ${index}`
       if (!window.confirm(`Remove "${label}" from the staging queue?`)) {
         console.log('[App] remove staging index cancelled', index)
         return
@@ -228,16 +253,16 @@ export default function App(): React.ReactElement {
       console.log('[App] remove staging index confirmed', { index, label })
       playback.removeFromStagingIndex(index)
     },
-    [playback.drawerStagingItems, playback.removeFromStagingIndex]
+    [playback.drawerStagingItems, playback.removeFromStagingIndex, lib.library]
   )
 
   /** Permanently remove one media file from disk and prune playback state. */
   const handleDeleteLibraryItem = useCallback(
     async (relPath: string) => {
-      const { fileName } = parseLibraryRelPath(relPath)
+      const label = displayTitleForRelPath(lib.library, relPath)
       if (
         !window.confirm(
-          `Permanently delete "${fileName}" from your library? This cannot be undone.`
+          `Permanently delete "${label}" from your library? This cannot be undone.`
         )
       ) {
         return
@@ -418,6 +443,7 @@ export default function App(): React.ReactElement {
         onFloatingSeek={playback.floatingSeek}
         onFloatingTogglePlay={playback.floatingTogglePlay}
         posterUrl={displayArtworkUrl}
+        currentDisplayTitle={currentTrackDisplayTitle}
       >
         <div className="flex-1 min-h-0 overflow-hidden relative">
           <AnimatePresence mode="wait">

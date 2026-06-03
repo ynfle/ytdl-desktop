@@ -2,6 +2,7 @@ import { extname, join, relative, sep } from 'path'
 import { promises as fs } from 'fs'
 import { normalizeChannelInput } from './channel-input'
 import { LIBRARY_MEDIA_EXT, LOG } from './constants'
+import { resolveLibraryDisplayTitle } from './media-embedded-title'
 import { resolveSidecarThumbnailRelPath } from './library-thumbnail'
 
 export type AppendChannelResult =
@@ -24,9 +25,21 @@ export async function readChannelsLinesOrEmpty(dataRoot: string): Promise<string
 }
 
 export async function scanLibraryVideos(dataRoot: string): Promise<
-  { relPath: string; mtimeMs: number; size: number; thumbRelPath: string | null }[]
+  {
+    relPath: string
+    mtimeMs: number
+    size: number
+    thumbRelPath: string | null
+    displayTitle: string
+  }[]
 > {
-  const out: { relPath: string; mtimeMs: number; size: number; thumbRelPath: string | null }[] = []
+  const out: {
+    relPath: string
+    mtimeMs: number
+    size: number
+    thumbRelPath: string | null
+    displayTitle: string
+  }[] = []
 
   async function walk(dir: string): Promise<void> {
     let entries
@@ -51,11 +64,13 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
         const st = await fs.stat(full)
         const rel = relative(dataRoot, full)
         const thumbRelPath = await resolveSidecarThumbnailRelPath(dataRoot, full)
+        const displayTitle = await resolveLibraryDisplayTitle(full)
         out.push({
           relPath: rel.split(sep).join('/'),
           mtimeMs: st.mtimeMs,
           size: st.size,
-          thumbRelPath
+          thumbRelPath,
+          displayTitle
         })
       }
     }

@@ -1,6 +1,6 @@
 # ytdl desktop
 
-Electron UI for your local **yt-dlp** workflow: browse downloaded videos, run **channel** sync and **ytrec** (same flags as [`../scripts/download_videos.sh`](../scripts/download_videos.sh)), queue playback, and **Picture-in-Picture**. The **channels.txt** panel lists each subscription line and can **fetch display names from YouTube** (metadata-only `yt-dlp`, same `--remote-components` as downloads). Lookups run **in parallel** (up to 4 `yt-dlp` processes). Results are **cached on disk** under Electron **user data** as `channel-display-cache.json` (7-day TTL per entry, keyed by absolute data-folder path + `channels.txt` line). Channel **avatars** are downloaded from the `/about` tab metadata into `channel-logos/` next to that JSON and served over the same loopback media server as videos. Use **Refetch all (ignore cache)** to bypass the cache. On app load (and **Reload list**), the table is filled from **channels.txt** plus any **still-valid cache** entries—no `yt-dlp` until you click **Fetch names**.
+Electron UI for your local **yt-dlp** workflow: browse downloaded media, run **channel**, **playlist**, **podcast**, and **ytrec** sync (same flags as [`../scripts/download_videos.sh`](../scripts/download_videos.sh) and [`../scripts/download_podcasts.sh`](../scripts/download_podcasts.sh)), queue playback, and **Picture-in-Picture**. The **channels.txt** panel lists each subscription line and can **fetch display names from YouTube** (metadata-only `yt-dlp`, same `--remote-components` as downloads). Lookups run **in parallel** (up to 4 `yt-dlp` processes). Results are **cached on disk** under Electron **user data** as `channel-display-cache.json` (7-day TTL per entry, keyed by absolute data-folder path + `channels.txt` line). Channel **avatars** are downloaded from the `/about` tab metadata into `channel-logos/` next to that JSON and served over the same loopback media server as videos. Use **Refetch all (ignore cache)** to bypass the cache. On app load (and **Reload list**), the table is filled from **channels.txt** plus any **still-valid cache** entries—no `yt-dlp` until you click **Fetch names**.
 
 ## Prerequisites
 
@@ -23,6 +23,8 @@ Electron UI for your local **yt-dlp** workflow: browse downloaded videos, run **
 
 By default the app uses the **parent of this package** as the data directory (so when `desktop/` lives inside the repo, that parent holds `channels.txt`, `downloaded.txt`, and **`videos/`** for downloaded files). Use **Choose folder…** to override (stored in app userData). For a **packaged** build, set the data folder explicitly if the default inside the app bundle is not where you want media.
 
+Podcast sync reads **`podcasts.txt`**, writes episode archive entries to **`podcast-downloaded.txt`**, and stores episodes under **`videos/podcasts/<feed-hash>/`** so the shell script and app share one layout.
+
 The library scanner **skips** the nested `desktop/` app folder so it does not index `node_modules`. It still finds videos under **`videos/`** and supports legacy top-level uploader dirs and root-level **`rec/`**.
 
 ## Scripts
@@ -32,6 +34,8 @@ cd desktop
 bun install   # or npm install
 bun run dev   # or npm run dev
 ```
+
+If **`bun run start`** fails with **`Error: Electron uninstall`**, the Electron binary was not downloaded. Run `node node_modules/electron/install.js` once (or `bun install` again; `postinstall` runs that script).
 
 ```bash
 bun run build && bun run start
@@ -48,6 +52,12 @@ Local files are served to `<video>` via a **127.0.0.1 HTTP server** inside the a
 
 ### `ELECTRON_RUN_AS_NODE`
 
-If your shell or IDE sets **`ELECTRON_RUN_AS_NODE=1`**, `require('electron')` resolves to a path string and the app will crash. The **`dev`** and **`start`** scripts run with `env -u ELECTRON_RUN_AS_NODE` (macOS/Linux). If you launch Electron manually, use:
+If your shell or IDE sets **`ELECTRON_RUN_AS_NODE=1`**, `require('electron')` resolves to a path string and the app will crash. The **`dev`** and **`start`** scripts use `scripts/run-electron-vite.mjs` to clear that variable on Windows, macOS, and Linux. If you launch Electron manually, make sure `ELECTRON_RUN_AS_NODE` is unset first.
+
+PowerShell:
+
+`Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue; ./node_modules/.bin/electron .`
+
+macOS/Linux:
 
 `env -u ELECTRON_RUN_AS_NODE ./node_modules/.bin/electron .`
