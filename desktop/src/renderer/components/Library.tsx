@@ -6,7 +6,7 @@ import { libraryItemDisplayTitle } from '../hooks/useLibrary'
 import { MediaThumbSlot } from './MediaThumbSlot'
 import { ChannelAvatar } from './ChannelAvatar'
 
-/** Human-friendly relative time label. */
+/** Human-friendly relative time label (used when no `.info.json` upload date). */
 function relativeTime(ms: number): string {
   const diff = Date.now() - ms
   if (diff < 0) return 'just now'
@@ -20,6 +20,39 @@ function relativeTime(ms: number): string {
   if (days < 30) return `${days}d ago`
   const months = Math.floor(days / 30)
   return `${months}mo ago`
+}
+
+const ROW_DATE_FMT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' }
+
+/** Right column: upload date from `.info.json` plus relative time since file was downloaded. */
+function libraryRowTimeLabel(item: {
+  uploadedAtMs: number | null
+  mtimeMs: number
+}): { uploadDate: string | null; downloadAge: string; title: string } {
+  const downloadedAt = new Date(item.mtimeMs)
+  const downloadAge = relativeTime(item.mtimeMs)
+  const downloadedFull = downloadedAt.toLocaleString(undefined, ROW_DATE_FMT)
+
+  if (item.uploadedAtMs != null) {
+    const uploadedAt = new Date(item.uploadedAtMs)
+    const uploadDate = uploadedAt.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    })
+    const uploadedFull = uploadedAt.toLocaleString(undefined, ROW_DATE_FMT)
+    return {
+      uploadDate,
+      downloadAge,
+      title: `Uploaded ${uploadedFull}\nDownloaded ${downloadedFull} (${downloadAge})`
+    }
+  }
+
+  return {
+    uploadDate: null,
+    downloadAge,
+    title: `Downloaded ${downloadedFull} (no upload date in .info.json)`
+  }
 }
 
 type Props = {
@@ -101,6 +134,7 @@ export default function LibraryPage({
             <ul className="divide-y divide-border">
               {group.items.map((item) => {
                 const label = libraryItemDisplayTitle(item)
+                const rowTime = libraryRowTimeLabel(item)
                 const isActive = item.relPath === currentRel
                 return (
                   <li
@@ -138,9 +172,19 @@ export default function LibraryPage({
                     >
                       {label}
                     </span>
-                    <span className="text-[10px] text-text-muted tabular-nums shrink-0 font-mono">
-                      {relativeTime(item.mtimeMs)}
-                    </span>
+                    <div
+                      className="flex flex-col items-end gap-0.5 shrink-0 max-w-[8.5rem] text-right leading-tight"
+                      title={rowTime.title}
+                    >
+                      {rowTime.uploadDate != null ? (
+                        <span className="text-[10px] text-text-muted tabular-nums font-mono truncate max-w-full">
+                          {rowTime.uploadDate}
+                        </span>
+                      ) : null}
+                      <span className="text-[10px] text-text-muted/80 tabular-nums font-mono truncate max-w-full">
+                        {rowTime.downloadAge}
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onMouseDown={(e) => e.stopPropagation()}

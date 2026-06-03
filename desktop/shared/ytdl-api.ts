@@ -7,6 +7,8 @@ export type LibraryVideo = {
   thumbRelPath: string | null
   /** From adjacent `.info.json` when present; otherwise humanized filename (no path). */
   displayTitle: string
+  /** Original upload / release time from `.info.json` (`timestamp`, `upload_date`, etc.) when present. */
+  uploadedAtMs: number | null
 }
 
 /** One row from channels.txt with optional title resolved via yt-dlp (no download). */

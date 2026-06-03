@@ -49,33 +49,95 @@ export function ytDlpInfoJsonSidecarPaths(mediaAbsPath: string): string[] {
   return out
 }
 
-/** yt-dlp `--write-info-json` / default sidecar: `Video.mp4.info.json` (sometimes `Video.info.json`). */
-export async function readYtDlpInfoJsonTitle(mediaAbsPath: string): Promise<string | null> {
+/** Parse yt-dlp `YYYYMMDD` date fields to UTC midnight epoch ms. */
+function parseYtDlpYyyymmddUtc(dateStr: string): number | null {
+  if (!/^\d{8}$/.test(dateStr)) return null
+  const y = Number(dateStr.slice(0, 4))
+  const m = Number(dateStr.slice(4, 6)) - 1
+  const d = Number(dateStr.slice(6, 8))
+  const ms = Date.UTC(y, m, d)
+  return Number.isFinite(ms) ? ms : null
+}
+
+/**
+ * Upload / release time from a parsed yt-dlp `.info.json` object (epoch ms, UTC).
+ * Prefers `timestamp` / `upload_date`; falls back to podcast-style `release_*`.
+ */
+export function parseYtDlpUploadedAtMs(j: Record<string, unknown>): number | null {
+  const ts = j.timestamp
+  if (typeof ts === 'number' && Number.isFinite(ts) && ts > 0) {
+    return Math.floor(ts) * 1000
+  }
+  if (typeof j.upload_date === 'string') {
+    const fromUpload = parseYtDlpYyyymmddUtc(j.upload_date)
+    if (fromUpload != null) return fromUpload
+  }
+  const rts = j.release_timestamp
+  if (typeof rts === 'number' && Number.isFinite(rts) && rts > 0) {
+    return Math.floor(rts) * 1000
+  }
+  if (typeof j.release_date === 'string') {
+    const fromRelease = parseYtDlpYyyymmddUtc(j.release_date)
+    if (fromRelease != null) return fromRelease
+  }
+  return null
+}
+
+export type YtDlpInfoJsonScanFields = {
+  title: string | null
+  /** Upload / release instant from sidecar when yt-dlp wrote it. */
+  uploadedAtMs: number | null
+}
+
+/** Read title + upload time from the first valid yt-dlp `.info.json` sidecar beside a media file. */
+export async function readYtDlpInfoJsonScanFields(mediaAbsPath: string): Promise<YtDlpInfoJsonScanFields> {
   for (const p of ytDlpInfoJsonSidecarPaths(mediaAbsPath)) {
     try {
       const raw = await fs.readFile(p, 'utf8')
-      const j = JSON.parse(raw) as { title?: unknown }
-      if (typeof j.title !== 'string') continue
-      const t = j.title.trim()
-      if (t.length === 0) continue
-      // Sidecar `title` is authoritative (YouTube/podcast metadata). Do not apply filename-template
-      // heuristics here — restrict-filename stems often normalize to the same key as the real title.
-      console.info(LOG, 'readTitleFromYtDlpInfoJson', { json: p.slice(-80), titleLen: t.length })
-      return t
+      const j = JSON.parse(raw) as Record<string, unknown>
+      let title: string | null = null
+      if (typeof j.title === 'string') {
+        const t = j.title.trim()
+        if (t.length > 0) title = t
+      }
+      const uploadedAtMs = parseYtDlpUploadedAtMs(j)
+      if (title || uploadedAtMs != null) {
+        console.info(LOG, 'readYtDlpInfoJsonScanFields', {
+          json: p.slice(-80),
+          titleLen: title?.length ?? 0,
+          uploadedAtMs
+        })
+        return { title, uploadedAtMs }
+      }
     } catch {
       /* missing or invalid */
     }
   }
-  return null
+  return { title: null, uploadedAtMs: null }
+}
+
+/** yt-dlp `--write-info-json` / default sidecar: `Video.mp4.info.json` (sometimes `Video.info.json`). */
+export async function readYtDlpInfoJsonTitle(mediaAbsPath: string): Promise<string | null> {
+  const { title } = await readYtDlpInfoJsonScanFields(mediaAbsPath)
+  return title
+}
+
+/** Display title + optional upload time for library scan rows (single sidecar read). */
+export async function resolveLibraryScanMetadata(mediaAbsPath: string): Promise<{
+  displayTitle: string
+  uploadedAtMs: number | null
+}> {
+  const { title, uploadedAtMs } = await readYtDlpInfoJsonScanFields(mediaAbsPath)
+  const displayTitle = title ?? humanizeRestrictFilename(basename(mediaAbsPath))
+  return { displayTitle, uploadedAtMs }
 }
 
 /**
  * Library list label: yt-dlp `.info.json` `title` when present, else humanized restrict-filename stem.
  */
 export async function resolveLibraryDisplayTitle(mediaAbsPath: string): Promise<string> {
-  const fromJson = await readYtDlpInfoJsonTitle(mediaAbsPath)
-  if (fromJson) return fromJson
-  return humanizeRestrictFilename(basename(mediaAbsPath))
+  const { displayTitle } = await resolveLibraryScanMetadata(mediaAbsPath)
+  return displayTitle
 }
 
 /** Normalize tag values from music-metadata (string, buffer, nested). */

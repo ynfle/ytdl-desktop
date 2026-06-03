@@ -48,6 +48,11 @@ export function libraryItemDisplayTitle(item: LibraryVideo): string {
   return humanizeRestrictFilename(parseLibraryRelPath(item.relPath).fileName)
 }
 
+/** Sort / display time: `.info.json` upload when known, else file mtime. */
+export function libraryItemSortMs(item: LibraryVideo): number {
+  return item.uploadedAtMs ?? item.mtimeMs
+}
+
 /** Lookup display title for a library relPath (scan cache), else humanized filename. */
 export function displayTitleForRelPath(library: LibraryVideo[], relPath: string): string {
   const hit = library.find((v) => v.relPath === relPath)
@@ -117,7 +122,7 @@ function buildLibraryGroups(
   }
   const groups: LibraryVideoGroup[] = []
   for (const [groupKey, items] of bucket) {
-    items.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    items.sort((a, b) => libraryItemSortMs(b) - libraryItemSortMs(a))
     const first = items[0]!
     const { channelFolder } = parseLibraryRelPath(first.relPath)
     const pRow = groupKey.startsWith('podcast/')
@@ -137,7 +142,7 @@ function buildLibraryGroups(
   }
   groups.sort((a, b) => {
     const newest = (g: LibraryVideoGroup): number =>
-      Math.max(...g.items.map((i) => i.mtimeMs), 0)
+      Math.max(...g.items.map((i) => libraryItemSortMs(i)), 0)
     return newest(b) - newest(a)
   })
   return groups

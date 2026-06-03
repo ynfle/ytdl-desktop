@@ -2,7 +2,7 @@ import { extname, join, relative, sep } from 'path'
 import { promises as fs } from 'fs'
 import { normalizeChannelInput } from './channel-input'
 import { LIBRARY_MEDIA_EXT, LOG } from './constants'
-import { resolveLibraryDisplayTitle } from './media-embedded-title'
+import { resolveLibraryScanMetadata } from './media-embedded-title'
 import { resolveSidecarThumbnailRelPath } from './library-thumbnail'
 
 export type AppendChannelResult =
@@ -31,6 +31,7 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
     size: number
     thumbRelPath: string | null
     displayTitle: string
+    uploadedAtMs: number | null
   }[]
 > {
   const out: {
@@ -39,6 +40,7 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
     size: number
     thumbRelPath: string | null
     displayTitle: string
+    uploadedAtMs: number | null
   }[] = []
 
   async function walk(dir: string): Promise<void> {
@@ -64,22 +66,25 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
         const st = await fs.stat(full)
         const rel = relative(dataRoot, full)
         const thumbRelPath = await resolveSidecarThumbnailRelPath(dataRoot, full)
-        const displayTitle = await resolveLibraryDisplayTitle(full)
+        const { displayTitle, uploadedAtMs } = await resolveLibraryScanMetadata(full)
         out.push({
           relPath: rel.split(sep).join('/'),
           mtimeMs: st.mtimeMs,
           size: st.size,
           thumbRelPath,
-          displayTitle
+          displayTitle,
+          uploadedAtMs
         })
       }
     }
   }
 
   await walk(dataRoot)
-  out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const sortMs = (v: { uploadedAtMs: number | null; mtimeMs: number }) => v.uploadedAtMs ?? v.mtimeMs
+  out.sort((a, b) => sortMs(b) - sortMs(a))
   const withThumb = out.filter((v) => v.thumbRelPath !== null).length
-  console.info(LOG, 'scanLibrary count=', out.length, 'with sidecar thumb=', withThumb)
+  const withUpload = out.filter((v) => v.uploadedAtMs != null).length
+  console.info(LOG, 'scanLibrary count=', out.length, 'with sidecar thumb=', withThumb, 'with upload date=', withUpload)
   return out
 }
 
