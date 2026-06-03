@@ -17,11 +17,15 @@ desktop/node_modules/
 desktop/out/
 desktop/dist/
 
-# Optional local TLS / package-manager overrides (not shared in git)
+# Corporate TLS / local proxy wiring (not shared in git)
 desktop/certs/
 desktop/.npmrc
 desktop/bunfig.toml
 desktop/package-lock.json
+desktop/src/main/corporate-ca.ts
+desktop/src/main/undici.d.ts
+desktop/scripts/resolve-corporate-ca.mjs
+desktop/scripts/test-electron-ca.mjs
 *.log
 
 # User data at repository root only
