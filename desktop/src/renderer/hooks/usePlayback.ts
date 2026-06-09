@@ -546,6 +546,30 @@ export function usePlayback(
     []
   )
 
+  /**
+   * Floating Electron PiP is reused for the next file via {@link playRel} + `reuseExisting`.
+   * Call before changing `currentRel` so the "close on track change" effect does not tear down the window.
+   */
+  const prepareFloatingHandoffForTrackChange = useCallback(
+    (reason: string): void => {
+      if (!floatingPlayerActiveRef.current || !shouldUseNativePictureInPictureOnly()) return
+      const rel = currentRelRef.current
+      const sync = floatingSyncRef.current
+      if (rel && sync && allowSpotSaveRef.current) {
+        const dur = sync.duration
+        if (dur > 0 && !Number.isNaN(dur) && sync.currentTime >= dur * RESUME_MAX_FRACTION) {
+          delete positionsRef.current[rel]
+          void window.ytdl.patchPlaybackSpot({ positionUpdates: { [rel]: null } })
+        } else if (sync.currentTime >= 0.5) {
+          flushPositionNow(rel, sync.currentTime)
+        }
+      }
+      pendingFloatingReopenRef.current = true
+      console.log('[usePlayback] floating PiP handoff → next track (pending reopen)', { reason })
+    },
+    [flushPositionNow, allowSpotSaveRef]
+  )
+
   /* ── Video event handlers ── */
 
   /**
@@ -790,6 +814,7 @@ export function usePlayback(
       console.warn('[usePlayback] playFromPlaylistIndex out of range', { p, len: pl.length })
       return
     }
+    prepareFloatingHandoffForTrackChange('playFromPlaylistIndex')
     const newPl = pl.slice(p)
     const newE = clampExplicitStartIndex(Math.max(0, E - p), newPl.length)
     setPlaylist(newPl)
@@ -797,7 +822,7 @@ export function usePlayback(
     setCursor(0)
     setPlaying(true)
     console.log('[usePlayback] playFromPlaylistIndex', { p, newPlLen: newPl.length, newE })
-  }, [])
+  }, [prepareFloatingHandoffForTrackChange])
 
   /** Staging-only drawer: play from row `i` onward. */
   const playFromStagingIndex = useCallback((i: number) => {
@@ -806,6 +831,7 @@ export function usePlayback(
       console.warn('[usePlayback] playFromStagingIndex out of range', { i, len: sq.length })
       return
     }
+    prepareFloatingHandoffForTrackChange('playFromStagingIndex')
     const slice = sq.slice(i)
     setPlaylist(slice)
     setExplicitStartIndex(0)
@@ -813,12 +839,13 @@ export function usePlayback(
     setCursor(0)
     setPlaying(true)
     console.log('[usePlayback] playFromStagingIndex', { i, len: slice.length })
-  }, [])
+  }, [prepareFloatingHandoffForTrackChange])
 
   const playFromLibraryRel = useCallback(
     (relPath: string) => {
       const idx = library.findIndex((x) => x.relPath === relPath)
       if (idx < 0) return
+      prepareFloatingHandoffForTrackChange('playFromLibraryRel')
       const context = library.slice(idx).map((x) => x.relPath)
       const playingNow = playingRef.current
       const tail = playingNow
@@ -837,7 +864,7 @@ export function usePlayback(
         wasPlaying: playingNow
       })
     },
-    [library]
+    [library, prepareFloatingHandoffForTrackChange]
   )
 
   /**
@@ -1282,23 +1309,9 @@ export function usePlayback(
     const i = cursorRef.current
     if (i + 1 >= pl.length) return
 
-    if (floatingPlayerActiveRef.current && shouldUseNativePictureInPictureOnly()) {
-      const rel = currentRelRef.current
-      const sync = floatingSyncRef.current
-      if (rel && sync && allowSpotSaveRef.current) {
-        const dur = sync.duration
-        if (dur > 0 && !Number.isNaN(dur) && sync.currentTime >= dur * RESUME_MAX_FRACTION) {
-          delete positionsRef.current[rel]
-          void window.ytdl.patchPlaybackSpot({ positionUpdates: { [rel]: null } })
-        } else if (sync.currentTime >= 0.5) {
-          flushPositionNow(rel, sync.currentTime)
-        }
-      }
-      pendingFloatingReopenRef.current = true
-      console.log('[usePlayback] skipNext: floating PiP handoff → next track (pending reopen)')
-    }
+    prepareFloatingHandoffForTrackChange('skipNext')
     setCursor(i + 1)
-  }, [flushPositionNow, allowSpotSaveRef])
+  }, [prepareFloatingHandoffForTrackChange])
 
   /** Media keys / `keydown`: coalesce duplicate deliveries in the same animation frame. */
   const skipNextFromMediaKeys = useCallback(() => {
