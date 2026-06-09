@@ -1,7 +1,8 @@
 import { extname, join, relative, sep } from 'path'
 import { promises as fs } from 'fs'
 import { normalizeChannelInput } from './channel-input'
-import { LIBRARY_MEDIA_EXT, LOG } from './constants'
+import { isYtDlpIncompleteArtifact, LIBRARY_MEDIA_EXT, LOG } from './constants'
+import { dedupeLibraryScanByEpisodeId } from './podcast-dedupe'
 import { resolveLibraryScanMetadata } from './media-embedded-title'
 import { resolveSidecarThumbnailRelPath } from './library-thumbnail'
 
@@ -61,6 +62,10 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
         }
         await walk(full)
       } else if (ent.isFile()) {
+        if (isYtDlpIncompleteArtifact(ent.name)) {
+          console.info(LOG, 'skip yt-dlp temp artifact', ent.name)
+          continue
+        }
         const ext = extname(ent.name).toLowerCase()
         if (!LIBRARY_MEDIA_EXT.has(ext)) continue
         const st = await fs.stat(full)
@@ -80,12 +85,23 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
   }
 
   await walk(dataRoot)
+  const deduped = await dedupeLibraryScanByEpisodeId(dataRoot, out)
   const sortMs = (v: { uploadedAtMs: number | null; mtimeMs: number }) => v.uploadedAtMs ?? v.mtimeMs
-  out.sort((a, b) => sortMs(b) - sortMs(a))
-  const withThumb = out.filter((v) => v.thumbRelPath !== null).length
-  const withUpload = out.filter((v) => v.uploadedAtMs != null).length
-  console.info(LOG, 'scanLibrary count=', out.length, 'with sidecar thumb=', withThumb, 'with upload date=', withUpload)
-  return out
+  deduped.sort((a, b) => sortMs(b) - sortMs(a))
+  const withThumb = deduped.filter((v) => v.thumbRelPath !== null).length
+  const withUpload = deduped.filter((v) => v.uploadedAtMs != null).length
+  console.info(
+    LOG,
+    'scanLibrary count=',
+    deduped.length,
+    'raw=',
+    out.length,
+    'with sidecar thumb=',
+    withThumb,
+    'with upload date=',
+    withUpload
+  )
+  return deduped
 }
 
 /** channels.txt / podcasts.txt line normalization (trim, drop blanks and # comments). */

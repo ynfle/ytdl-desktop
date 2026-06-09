@@ -15,6 +15,11 @@ export const AUDIO_EXT = new Set(['.m4a', '.mp3', '.opus', '.ogg', '.aac'])
 /** Library scan: video + podcast audio files under the data root. */
 export const LIBRARY_MEDIA_EXT = new Set<string>([...VIDEO_EXT, ...AUDIO_EXT])
 
+/** yt-dlp/ffmpeg partial outputs (e.g. `episode.temp.mp3`) — never show in library. */
+export function isYtDlpIncompleteArtifact(fileName: string): boolean {
+  return fileName.includes('.temp.')
+}
+
 /** Browser-like headers so CDNs (yt3/ggpht) accept main-process fetches. */
 export const CHANNEL_LOGO_FETCH_HEADERS = {
   'User-Agent':

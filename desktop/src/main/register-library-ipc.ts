@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { basename, extname, join, normalize } from 'path'
 import { promises as fs } from 'fs'
 import { getDataDir, isPathInsideRoot } from './config-store'
-import { LIBRARY_MEDIA_EXT, LOG } from './constants'
+import { isYtDlpIncompleteArtifact, LIBRARY_MEDIA_EXT, LOG } from './constants'
 import { humanizeRestrictFilename } from '../../shared/humanize-restrict-filename'
 import { readEmbeddedMediaTitle, ytDlpInfoJsonSidecarPaths } from './media-embedded-title'
 import { getMediaAuth } from './media-server'
@@ -68,6 +68,10 @@ export function registerLibraryEmbeddedTitleIpc(): void {
         console.warn(LOG, 'library:getEmbeddedTitle path outside data root', relPath)
         return { ok: false as const, error: 'path not allowed' }
       }
+      if (isYtDlpIncompleteArtifact(basename(full))) {
+        console.warn(LOG, 'library:getEmbeddedTitle yt-dlp temp artifact', relPath)
+        return { ok: false as const, error: 'incomplete download artifact' }
+      }
       const ext = extname(full).toLowerCase()
       if (!LIBRARY_MEDIA_EXT.has(ext)) {
         console.warn(LOG, 'library:getEmbeddedTitle extension not allowed', ext)
@@ -123,6 +127,10 @@ export function registerLibraryDeleteMediaIpc(): void {
       if (!isPathInsideRoot(root, full)) {
         console.warn(LOG, 'library:deleteMedia path outside data root', relPath)
         return { ok: false as const, error: 'path not allowed' }
+      }
+      if (isYtDlpIncompleteArtifact(basename(full))) {
+        console.warn(LOG, 'library:deleteMedia yt-dlp temp artifact', relPath)
+        return { ok: false as const, error: 'incomplete download artifact' }
       }
       const ext = extname(full).toLowerCase()
       if (!LIBRARY_MEDIA_EXT.has(ext)) {

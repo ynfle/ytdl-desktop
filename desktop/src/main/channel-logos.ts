@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { join, resolve, sep } from 'path'
 import { promises as fs } from 'fs'
 import { CHANNEL_LOGO_FETCH_HEADERS, LOG } from './constants'
+import { mimeFromImageBuffer } from './image-mime'
 
 /** Directory for downloaded channel avatars (under Electron userData). */
 export function channelLogosDir(): string {
@@ -21,14 +22,10 @@ export async function peekImageMime(filePath: string): Promise<string> {
   try {
     const buf = Buffer.alloc(16)
     const { bytesRead } = await fh.read(buf, 0, 16, 0)
-    const b = buf.subarray(0, bytesRead)
-    if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg'
-    if (b.length >= 12 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp'
-    if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png'
+    return mimeFromImageBuffer(buf.subarray(0, bytesRead)) ?? 'application/octet-stream'
   } finally {
     await fh.close()
   }
-  return 'application/octet-stream'
 }
 
 export function isPathInsideChannelLogos(absFile: string): boolean {

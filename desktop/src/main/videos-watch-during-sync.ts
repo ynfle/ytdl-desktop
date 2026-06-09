@@ -2,7 +2,7 @@ import { basename, extname, join } from 'path'
 import { watch, type FSWatcher } from 'fs'
 import { mkdir } from 'fs/promises'
 
-import { LIBRARY_MEDIA_EXT, LOG } from './constants'
+import { isYtDlpIncompleteArtifact, LIBRARY_MEDIA_EXT, LOG } from './constants'
 
 /** Coalesce bursts of fs events (merge + rename) into one library rescan. */
 const DEBOUNCE_MS = 550
@@ -54,7 +54,7 @@ export function startVideosLibraryWatch(
     }
     const norm = name.replace(/\\/g, '/')
     const base = basename(norm)
-    if (base.includes('.part') || base.includes('.ytdl')) {
+    if (base.includes('.part') || base.includes('.ytdl') || isYtDlpIncompleteArtifact(base)) {
       return
     }
     const ext = extname(base).toLowerCase()

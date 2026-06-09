@@ -7,6 +7,11 @@
 
 set -u
 
+# Readable podcast basename (truncated title + short id tail); full title stays in .info.json.
+YTDLP_PODCAST_TITLE_MAX_BYTES=50
+YTDLP_PODCAST_ID_SUFFIX_CHARS=8
+YTDLP_PODCAST_BASENAME="%(title).${YTDLP_PODCAST_TITLE_MAX_BYTES}B_%(id).${YTDLP_PODCAST_ID_SUFFIX_CHARS}s"
+
 PODCAST_ARCHIVE="podcast-downloaded.txt"
 PODCAST_LIST="podcasts.txt"
 PODCAST_ROOT="videos/podcasts"
@@ -73,7 +78,7 @@ download_podcasts() {
         echo "[ytdl] === podcast $started: ${feed_url:0:72} ===" >&2
         echo "[ytdl] output: $PODCAST_ROOT/$folder_id" >&2
         echo "[ytdl] archive: $PODCAST_ARCHIVE" >&2
-        echo "[ytdl] episode thumbnails enabled (write-thumbnail, embed-thumbnail, jpg)" >&2
+        echo "[ytdl] write-thumbnail only (use desktop app sync for repair/embed)" >&2
 
         yt-dlp \
             --playlist-items 1-10 \
@@ -84,10 +89,8 @@ download_podcasts() {
             --write-info-json \
             --embed-metadata \
             --write-thumbnail \
-            --embed-thumbnail \
-            --convert-thumbnails jpg \
             -f 'bestaudio/best' \
-            -o "$PODCAST_ROOT/$folder_id/%(title)s.%(ext)s" \
+            -o "$PODCAST_ROOT/$folder_id/${YTDLP_PODCAST_BASENAME}.%(ext)s" \
             --restrict-filenames \
             "$feed_url"
 

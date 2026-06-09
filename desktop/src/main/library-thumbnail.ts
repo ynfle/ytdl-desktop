@@ -2,6 +2,7 @@ import { join, normalize, parse, relative, sep } from 'path'
 import { promises as fs } from 'fs'
 import { isPathInsideRoot } from './config-store'
 import { LOG } from './constants'
+import { isValidImageFile } from './image-mime'
 import { ytDlpInfoJsonSidecarPaths } from './media-embedded-title'
 
 /** Sidecar extensions yt-dlp may leave next to the media file (jpg after --convert-thumbnails). */
@@ -19,11 +20,14 @@ export async function resolveSidecarThumbnailRelPath(
     const thumbFull = join(dir, `${name}${ext}`)
     try {
       const st = await fs.stat(thumbFull)
-      if (st.isFile()) {
-        const rel = relative(dataRoot, thumbFull).split(sep).join('/')
-        console.info(LOG, 'library thumb sidecar ok', rel)
-        return rel
+      if (!st.isFile()) continue
+      if (!(await isValidImageFile(thumbFull))) {
+        console.info(LOG, 'library thumb skip invalid sidecar', thumbFull)
+        continue
       }
+      const rel = relative(dataRoot, thumbFull).split(sep).join('/')
+      console.info(LOG, 'library thumb sidecar ok', rel)
+      return rel
     } catch {
       // ENOENT or unreadable — try next extension
     }

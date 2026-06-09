@@ -8,6 +8,11 @@
 #   ./download_videos.sh playlists — playlists.txt only
 #   ./download_videos.sh ytrec N   — recommended feed (N videos)
 
+# Windows MAX_PATH headroom: truncate on-disk basename (full title stays in .info.json).
+YTDLP_TITLE_MAX_BYTES=70
+YTDLP_ID_MAX_CHARS=16
+YTDLP_TRUNCATED_BASENAME="%(title).${YTDLP_TITLE_MAX_BYTES}B_%(id).${YTDLP_ID_MAX_CHARS}s"
+
 YTDLP_COMMON=(
     --playlist-items 1-10
     --download-archive downloaded.txt
@@ -21,7 +26,7 @@ YTDLP_COMMON=(
     --embed-thumbnail
     --convert-thumbnails jpg
     -t mp4
-    -o "videos/%(uploader)s/%(title)s.%(ext)s"
+    -o "videos/%(uploader)s/${YTDLP_TRUNCATED_BASENAME}.%(ext)s"
     --restrict-filenames
 )
 
@@ -67,7 +72,7 @@ if [[ "$1" == "ytrec" ]]; then
         --download-archive downloaded.txt \
         --ignore-errors \
         -f 'bestvideo[height<=720]+bestaudio/best[height<=720]' \
-        -o "videos/rec/%(channel)s/%(title)s.%(ext)s" \
+        -o "videos/rec/%(channel)s/${YTDLP_TRUNCATED_BASENAME}.%(ext)s" \
         --restrict-filenames \
         ":ytrec"
     echo "Completed downloading recommended videos" >&2

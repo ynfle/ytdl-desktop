@@ -1,6 +1,17 @@
+import { tmpdir } from 'os'
 import { join } from 'path'
 import { promises as fs } from 'fs'
+import {
+  ytdlpChannelOutputTemplate,
+  ytdlpPodcastOutputTemplate,
+  ytdlpYtrecOutputTemplate
+} from '../../shared/ytdl-output-template'
 import { broadcastLibraryStale, broadcastLog } from './broadcast'
+import {
+  cleanupLegacyPodcastDuplicatesInFolder,
+  migrateUuidPodcastFilesToReadable
+} from './podcast-dedupe'
+import { repairPodcastEpisodeThumbnailsInFolder } from './podcast-episode-thumbnail'
 import { folderIdFromFeedUrl } from './podcast-input'
 import { readChannelsFile, readPlaylistsLinesOrEmpty, readPodcastsLinesOrEmpty } from './library-scan'
 import { LOG } from './constants'
@@ -55,7 +66,7 @@ function youtubeChannelLikeDownloadArgs(targetUrl: string): string[] {
     '-t',
     'mp4',
     '-o',
-    'videos/%(uploader)s/%(title)s.%(ext)s',
+    ytdlpChannelOutputTemplate(),
     '--restrict-filenames',
     targetUrl
   ]
@@ -100,6 +111,14 @@ export async function syncPodcastsJob(dataRoot: string): Promise<void> {
   await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncPodcastsJobInner(dataRoot))
 }
 
+/** Short temp dir for yt-dlp/ffmpeg post-process on Windows (avoids MAX_PATH on `*.temp.mp3`). */
+function ytDlpWindowsTempPathArgs(): string[] {
+  if (process.platform !== 'win32') return []
+  const tempDir = join(tmpdir(), 'ytdl-temp')
+  console.info(LOG, 'podcast sync: Windows temp path for yt-dlp', tempDir)
+  return ['-P', `temp:${tempDir}`]
+}
+
 async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
   const lines = await readPodcastsLinesOrEmpty(dataRoot)
   broadcastLog(`[ytdl] podcasts.txt: ${lines.length} feeds\n`)
@@ -107,6 +126,7 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
     const folderId = folderIdFromFeedUrl(feedUrl)
     const outDir = join(dataRoot, 'videos', 'podcasts', folderId)
     await fs.mkdir(outDir, { recursive: true })
+    const outTemplate = ytdlpPodcastOutputTemplate(folderId)
     const args = [
       '--playlist-items',
       '1-10',
@@ -119,24 +139,39 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
       '--write-info-json',
       '--embed-metadata',
       '--write-thumbnail',
-      '--embed-thumbnail',
-      '--convert-thumbnails',
-      'jpg',
       '-f',
       'bestaudio/best',
       '-o',
-      `videos/podcasts/${folderId}/%(title)s.%(ext)s`,
+      outTemplate,
       '--restrict-filenames',
+      ...ytDlpWindowsTempPathArgs(),
       feedUrl
     ]
     broadcastLog(`\n[ytdl] === podcast ${feedUrl.slice(0, 72)}… ===\n`)
-    broadcastLog('[ytdl] podcast: episode thumbnails enabled (write-thumbnail, embed-thumbnail, jpg)\n')
+    broadcastLog(`[ytdl] podcast: output template ${outTemplate}\n`)
+    broadcastLog('[ytdl] podcast: yt-dlp write-thumbnail; post-sync repair embeds cover art\n')
     console.info(LOG, 'podcast sync feed starting', {
       folderId,
-      thumbnails: true,
+      outTemplate,
+      thumbnails: 'write-then-repair',
       feedPreview: feedUrl.slice(0, 72)
     })
     const { code } = await runYtDlp(args, dataRoot)
+    const thumbRepair = await repairPodcastEpisodeThumbnailsInFolder(outDir, folderId)
+    if (thumbRepair.sidecarsFixed > 0 || thumbRepair.embedded > 0) {
+      broadcastLog(
+        `[ytdl] podcast: thumbnails repaired sidecars=${thumbRepair.sidecarsFixed} embedded=${thumbRepair.embedded} failed=${thumbRepair.failed}\n`
+      )
+    }
+    const migrated = await migrateUuidPodcastFilesToReadable(outDir)
+    if (migrated.length > 0) {
+      broadcastLog(`[ytdl] podcast: renamed ${migrated.length} file(s) to readable titles\n`)
+    }
+    const removedLegacy = await cleanupLegacyPodcastDuplicatesInFolder(outDir)
+    if (removedLegacy.length > 0) {
+      broadcastLog(`[ytdl] podcast: removed ${removedLegacy.length} legacy duplicate file(s)\n`)
+      console.info(LOG, 'podcast cleanup after feed', { folderId, removed: removedLegacy.length })
+    }
     if (code !== 0) {
       broadcastLog(`[ytdl] warning: exit code ${code} for podcast feed\n`)
     }
@@ -167,7 +202,7 @@ async function runSyncYtrecJobInner(dataRoot: string, count: number): Promise<vo
     '-f',
     'bestvideo[height<=720]+bestaudio/best[height<=720]',
     '-o',
-    'videos/rec/%(channel)s/%(title)s.%(ext)s',
+    ytdlpYtrecOutputTemplate(),
     '--restrict-filenames',
     ':ytrec'
   ]
