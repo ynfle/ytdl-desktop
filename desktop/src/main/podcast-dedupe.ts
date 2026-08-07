@@ -13,6 +13,7 @@ export function isUuidEpisodeBasename(fileName: string): boolean {
   return EPISODE_UUID_RE.test(stem)
 }
 
+/** One library scan row passed through podcast episode-id dedupe (passthrough fields preserved). */
 type ScanRow = {
   relPath: string
   mtimeMs: number
@@ -20,6 +21,8 @@ type ScanRow = {
   thumbRelPath: string | null
   displayTitle: string
   uploadedAtMs: number | null
+  /** Seconds from yt-dlp `.info.json` when present. */
+  duration: number | null
 }
 
 type EpisodeSidecar = { title: string; id: string }

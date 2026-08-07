@@ -868,6 +868,43 @@ export function usePlayback(
   )
 
   /**
+   * Play from a caller-ordered list (e.g. one channel, oldest → newest).
+   * Builds Up next as `orderedRels` from `startRel` onward, then appends the usual queue tail.
+   */
+  const playFromOrderedRels = useCallback(
+    (orderedRels: string[], startRel: string) => {
+      const idx = orderedRels.indexOf(startRel)
+      if (idx < 0) {
+        console.warn('[usePlayback] playFromOrderedRels: startRel missing from ordered list', {
+          startRel,
+          orderedLen: orderedRels.length
+        })
+        return
+      }
+      prepareFloatingHandoffForTrackChange('playFromOrderedRels')
+      const context = orderedRels.slice(idx)
+      const playingNow = playingRef.current
+      const tail = playingNow
+        ? playlistRef.current.slice(explicitStartIndexRef.current)
+        : [...playlistRef.current.slice(explicitStartIndexRef.current), ...stagingQueueRef.current]
+      setStagingQueue([])
+      const merged = [...context, ...tail]
+      setPlaylist(merged)
+      setExplicitStartIndex(context.length)
+      setCursor(0)
+      setPlaying(true)
+      console.log('[usePlayback] playFromOrderedRels', {
+        startRel,
+        orderedLen: orderedRels.length,
+        contextLen: context.length,
+        tailLen: tail.length,
+        wasPlaying: playingNow
+      })
+    },
+    [prepareFloatingHandoffForTrackChange]
+  )
+
+  /**
    * Move the video element back from a Document PiP window into the main DOM slot.
    * @param closePipWindow When true, call {@link Window#close} on the PiP window after moving the node (e.g. user toggle off or stop).
    */
@@ -1748,6 +1785,7 @@ export function usePlayback(
     playFromPlaylistIndex,
     playFromStagingIndex,
     playFromLibraryRel,
+    playFromOrderedRels,
     enterPip,
     stopPlayback,
     skipNext,

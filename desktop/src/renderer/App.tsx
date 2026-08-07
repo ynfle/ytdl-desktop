@@ -308,6 +308,7 @@ export default function App(): React.ReactElement {
             currentRel={playback.currentRel}
             onQueue={playback.addToQueue}
             onPlayFrom={playback.playFromLibraryRel}
+            onPlayFromOrdered={playback.playFromOrderedRels}
             onDelete={handleDeleteLibraryItem}
             isEmpty={lib.library.length === 0}
           />

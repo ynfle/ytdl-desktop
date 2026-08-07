@@ -87,6 +87,7 @@ export type YtDlpInfoJsonScanFields = {
   title: string | null
   /** Upload / release instant from sidecar when yt-dlp wrote it. */
   uploadedAtMs: number | null
+  duration: number | null
 }
 
 /** Read title + upload time from the first valid yt-dlp `.info.json` sidecar beside a media file. */
@@ -101,19 +102,24 @@ export async function readYtDlpInfoJsonScanFields(mediaAbsPath: string): Promise
         if (t.length > 0) title = t
       }
       const uploadedAtMs = parseYtDlpUploadedAtMs(j)
-      if (title || uploadedAtMs != null) {
+      // yt-dlp writes top-level `duration` in seconds; missing → null (not NaN).
+      const rawDuration = Number(j.duration)
+      const duration =
+        Number.isFinite(rawDuration) && rawDuration >= 0 ? rawDuration : null
+      if (title || uploadedAtMs != null || duration != null) {
         console.info(LOG, 'readYtDlpInfoJsonScanFields', {
           json: p.slice(-80),
           titleLen: title?.length ?? 0,
-          uploadedAtMs
+          uploadedAtMs,
+          duration
         })
-        return { title, uploadedAtMs }
+        return { title, uploadedAtMs, duration }
       }
     } catch {
       /* missing or invalid */
     }
   }
-  return { title: null, uploadedAtMs: null }
+  return { title: null, uploadedAtMs: null, duration: null }
 }
 
 /** yt-dlp `--write-info-json` / default sidecar: `Video.mp4.info.json` (sometimes `Video.info.json`). */
@@ -126,10 +132,11 @@ export async function readYtDlpInfoJsonTitle(mediaAbsPath: string): Promise<stri
 export async function resolveLibraryScanMetadata(mediaAbsPath: string): Promise<{
   displayTitle: string
   uploadedAtMs: number | null
+  duration: number | null
 }> {
-  const { title, uploadedAtMs } = await readYtDlpInfoJsonScanFields(mediaAbsPath)
+  const { title, uploadedAtMs, duration } = await readYtDlpInfoJsonScanFields(mediaAbsPath)
   const displayTitle = title ?? humanizeRestrictFilename(basename(mediaAbsPath))
-  return { displayTitle, uploadedAtMs }
+  return { displayTitle, uploadedAtMs, duration}
 }
 
 /**

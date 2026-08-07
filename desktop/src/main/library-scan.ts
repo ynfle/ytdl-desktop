@@ -33,6 +33,7 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
     thumbRelPath: string | null
     displayTitle: string
     uploadedAtMs: number | null
+    duration: number | null
   }[]
 > {
   const out: {
@@ -42,6 +43,7 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
     thumbRelPath: string | null
     displayTitle: string
     uploadedAtMs: number | null
+    duration: number | null
   }[] = []
 
   async function walk(dir: string): Promise<void> {
@@ -71,14 +73,15 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
         const st = await fs.stat(full)
         const rel = relative(dataRoot, full)
         const thumbRelPath = await resolveSidecarThumbnailRelPath(dataRoot, full)
-        const { displayTitle, uploadedAtMs } = await resolveLibraryScanMetadata(full)
+        const { displayTitle, uploadedAtMs, duration } = await resolveLibraryScanMetadata(full)
         out.push({
           relPath: rel.split(sep).join('/'),
           mtimeMs: st.mtimeMs,
           size: st.size,
           thumbRelPath,
           displayTitle,
-          uploadedAtMs
+          uploadedAtMs,
+          duration
         })
       }
     }
@@ -90,6 +93,7 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
   deduped.sort((a, b) => sortMs(b) - sortMs(a))
   const withThumb = deduped.filter((v) => v.thumbRelPath !== null).length
   const withUpload = deduped.filter((v) => v.uploadedAtMs != null).length
+  const withDuration = deduped.filter((v) => v.duration != null).length
   console.info(
     LOG,
     'scanLibrary count=',
@@ -99,7 +103,9 @@ export async function scanLibraryVideos(dataRoot: string): Promise<
     'with sidecar thumb=',
     withThumb,
     'with upload date=',
-    withUpload
+    withUpload,
+    'with duration=',
+    withDuration
   )
   return deduped
 }

@@ -9,6 +9,8 @@ export type LibraryVideo = {
   displayTitle: string
   /** Original upload / release time from `.info.json` (`timestamp`, `upload_date`, etc.) when present. */
   uploadedAtMs: number | null
+  /** Media length in seconds from `.info.json` when present. */
+  duration: number | null
 }
 
 /** One row from channels.txt with optional title resolved via yt-dlp (no download). */
