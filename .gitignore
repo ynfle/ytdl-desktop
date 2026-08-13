@@ -28,11 +28,21 @@ desktop/scripts/resolve-corporate-ca.mjs
 desktop/scripts/test-electron-ca.mjs
 *.log
 
-# User data at repository root only
+# User data at repository root only (also covered by `/*`; listed so they stay out if the allowlist changes)
 /channels.txt
+/playlists.txt
+/podcasts.txt
 /downloaded.txt
+/podcast-downloaded.txt
+/ytdl-config.json
 /videos/
 /rec/
+
+# Editor backups / local env (do not commit)
+*~
+*.bak
+.env
+.env.*
 
 # Stray media at repository root only
 /*.mp4
