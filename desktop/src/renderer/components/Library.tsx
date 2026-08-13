@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { ArrowLeft, Play, Plus, Film, Trash2, Search, X } from 'lucide-react'
 import type { LibraryVideo } from '../../../shared/ytdl-api'
@@ -235,6 +235,14 @@ export default function LibraryPage({
   const [searchQuery, setSearchQuery] = useState('')
   /** When set, show only that channel's media (detail page). */
   const [channelGroupKey, setChannelGroupKey] = useState<string | null>(null)
+  /** Scrollable file list under the sticky chrome. */
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  /** Library-list `scrollTop` captured when opening a channel (restored on Back). */
+  const savedLibraryScrollTopRef = useRef(0)
+  /** When set, the next library-list layout should restore this `scrollTop`. */
+  const pendingRestoreScrollTopRef = useRef<number | null>(null)
+  /** Skip group enter animation on Back so the restored scroll offset stays visually stable. */
+  const skipListEnterAnimationRef = useRef(false)
 
   /** Resolve the open channel from the full (unfiltered) group list. */
   const channelGroup = useMemo(() => {
@@ -248,9 +256,38 @@ export default function LibraryPage({
       console.info('[Library] channel detail group missing; returning to library', {
         channelGroupKey
       })
+      pendingRestoreScrollTopRef.current = savedLibraryScrollTopRef.current
+      skipListEnterAnimationRef.current = true
       setChannelGroupKey(null)
     }
   }, [channelGroupKey, channelGroup])
+
+  /**
+   * After channel detail opens, start that file list at the top.
+   * After Back, restore the library list to the saved scroll offset (same files in view).
+   */
+  useLayoutEffect(() => {
+    const el = listScrollRef.current
+    if (!el) return
+    if (channelGroupKey != null) {
+      el.scrollTop = 0
+      console.info('[Library] channel detail list scrolled to top', { channelGroupKey })
+      return
+    }
+    const pending = pendingRestoreScrollTopRef.current
+    if (pending == null) return
+    pendingRestoreScrollTopRef.current = null
+    skipListEnterAnimationRef.current = false
+    el.scrollTop = pending
+    console.info('[Library] restored library list scroll', { scrollTop: pending })
+    // Re-apply after paint in case group remount / motion layout shifts height.
+    requestAnimationFrame(() => {
+      if (listScrollRef.current) {
+        listScrollRef.current.scrollTop = pending
+        console.info('[Library] re-applied library list scroll after paint', { scrollTop: pending })
+      }
+    })
+  }, [channelGroupKey])
 
   /** Groups shown in the scroll list (search-filtered; single group on channel page). */
   const visibleGroups = useMemo(() => {
@@ -266,14 +303,21 @@ export default function LibraryPage({
 
   /** Open channel detail from a sticky group header click. */
   const openChannel = (groupKey: string, title: string): void => {
-    console.info('[Library] open channel detail', { groupKey, title })
+    const scrollTop = listScrollRef.current?.scrollTop ?? 0
+    savedLibraryScrollTopRef.current = scrollTop
+    pendingRestoreScrollTopRef.current = null
+    skipListEnterAnimationRef.current = false
+    console.info('[Library] open channel detail', { groupKey, title, savedScrollTop: scrollTop })
     setChannelGroupKey(groupKey)
     // Keep search so users can refine within the channel; clear noise if empty-looking.
   }
 
-  /** Leave channel detail and return to the full library. */
+  /** Leave channel detail and return to the full library at the same list offset. */
   const goBackToLibrary = (): void => {
-    console.info('[Library] back from channel detail', { channelGroupKey })
+    const restoreTo = savedLibraryScrollTopRef.current
+    pendingRestoreScrollTopRef.current = restoreTo
+    skipListEnterAnimationRef.current = true
+    console.info('[Library] back from channel detail', { channelGroupKey, restoreScrollTop: restoreTo })
     setChannelGroupKey(null)
   }
 
@@ -410,7 +454,7 @@ export default function LibraryPage({
       </div>
 
       {/* Scrollable channel groups (under sticky chrome) */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div ref={listScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {visibleGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-text-muted px-6">
             <p className="text-sm font-medium text-text-secondary">No matches</p>
@@ -422,7 +466,7 @@ export default function LibraryPage({
           visibleGroups.map((group, gi) => (
             <motion.div
               key={group.groupKey}
-              initial={{ opacity: 0, y: 10 }}
+              initial={skipListEnterAnimationRef.current ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: Math.min(gi * 0.04, 0.4), ease: [0.22, 0.61, 0.36, 1] }}
               className="card-interactive rounded-xl border border-border bg-surface overflow-hidden"
