@@ -476,7 +476,7 @@ function usePlayerChrome({
             background: 'linear-gradient(135deg, #e8a849 0%, #d4893a 100%)',
             boxShadow: '0 2px 12px rgba(232, 168, 73, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
           }}
-          title={barPaused ? 'Play' : 'Pause'}
+          title={barPaused ? 'Play (Space)' : 'Pause (Space)'}
         >
           {barPaused ? <Play size={16} className="ml-0.5" /> : <Pause size={16} />}
         </motion.button>

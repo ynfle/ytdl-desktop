@@ -245,7 +245,7 @@
       </div>
       <div class="bar">
         <button type="button" id="bBack" title="Seek back 10 seconds">&minus;10s</button>
-        <button type="button" id="bPlay" title="Play / Pause">Play</button>
+        <button type="button" id="bPlay" title="Play / Pause (Space)">Play</button>
         <button type="button" id="bFwd" title="Seek forward 10 seconds">+10s</button>
         <button type="button" id="bClose" title="Close">Close</button>
       </div>
@@ -374,6 +374,21 @@
           bPlay.textContent = v.paused ? 'Play' : 'Pause'
         }
 
+        /** Shared by the Play button, Space, and main-window IPC `togglePlay`. */
+        function togglePlayPause() {
+          if (v.paused) {
+            void v.play().catch(function (e) {
+              console.warn('[floating-player] togglePlay play failed', e)
+            })
+          } else {
+            v.pause()
+          }
+          updatePlayLabel()
+          refreshTimelineFromVideo()
+          sendProgressSync(true)
+          console.log('[floating-player] togglePlayPause', { paused: v.paused })
+        }
+
         /** Push timeline to main window (main <video> is frozen while this window plays). */
         var syncThrottleMs = 250
         var lastSyncSent = 0
@@ -418,10 +433,7 @@
             return
           }
           if (cmd.action === 'togglePlay') {
-            void (v.paused ? v.play() : v.pause())
-            updatePlayLabel()
-            refreshTimelineFromVideo()
-            sendProgressSync(true)
+            togglePlayPause()
           }
         })
 
@@ -563,10 +575,26 @@
           sendProgressSync(true)
         }
         bPlay.onclick = function () {
-          void (v.paused ? v.play() : v.pause())
-          updatePlayLabel()
-          sendProgressSync(true)
+          togglePlayPause()
         }
+
+        /**
+         * Space play/pause while this BrowserWindow is focused.
+         * Capture + preventDefault so a focused button does not also activate.
+         */
+        window.addEventListener(
+          'keydown',
+          function (e) {
+            if (e.repeat) return
+            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+            var isSpace = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar'
+            if (!isSpace) return
+            e.preventDefault()
+            console.log('[floating-player] keyboard Space → togglePlayPause', { paused: v.paused })
+            togglePlayPause()
+          },
+          true
+        )
         bClose.onclick = function () {
           window.floatingPlayer.closing(v.currentTime)
           window.close()

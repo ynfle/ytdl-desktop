@@ -1613,6 +1613,7 @@ export function usePlayback(
    * Hardware / OS "next track" key (`MediaTrackNext`) is not always routed through
    * {@link MediaSession#setActionHandler} in Electron; listen on `window` as well.
    * Fallback chord: ⌘/Ctrl+Shift+ArrowRight (matches common desktop player patterns).
+   * Space toggles play/pause on the active player (inline `<video>` or floating PiP).
    */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -1639,6 +1640,38 @@ export function usePlayback(
           code: e.code
         })
         handleOsSeekForward()
+        return
+      }
+
+      /** Bare Space only; ignore chords so Spotlight / IME / OS launchers keep those shortcuts. */
+      const isSpace =
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar')
+      if (isSpace) {
+        if (e.repeat) return
+        e.preventDefault()
+        if (floatingPlayerActiveRef.current) {
+          console.log('[usePlayback] keyboard Space → floating PiP togglePlay')
+          floatingTogglePlay()
+          return
+        }
+        const v = videoRef.current
+        if (!v) {
+          console.log('[usePlayback] keyboard Space ignored (no <video>)')
+          return
+        }
+        if (v.paused) {
+          void v.play().catch((err) => {
+            console.warn('[usePlayback] keyboard Space play failed', err)
+          })
+          console.log('[usePlayback] keyboard Space → play (inline <video>)')
+        } else {
+          v.pause()
+          console.log('[usePlayback] keyboard Space → pause (inline <video>)')
+        }
         return
       }
 
@@ -1671,7 +1704,7 @@ export function usePlayback(
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [skipNextFromMediaKeys, applyMediaSessionSeekDelta, handleOsSeekForward])
+  }, [skipNextFromMediaKeys, applyMediaSessionSeekDelta, handleOsSeekForward, floatingTogglePlay])
 
   /** Publish duration/position so the OS enables seek / scrub (especially macOS). */
   useEffect(() => {

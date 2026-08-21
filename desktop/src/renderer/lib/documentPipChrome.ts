@@ -85,9 +85,23 @@ export function mountDocumentPipChrome(
   video.addEventListener('play', onPlay)
   video.addEventListener('pause', onPause)
 
+  /** Space play/pause while the document PiP window is focused. */
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.repeat) return
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    const isSpace = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar'
+    if (!isSpace) return
+    e.preventDefault()
+    console.log('[documentPipChrome] keyboard Space → toggle play/pause', { paused: video.paused })
+    void (video.paused ? video.play() : video.pause())
+    updatePlayLabel()
+  }
+  pipWindow.addEventListener('keydown', onKeyDown, true)
+
   console.log('[documentPipChrome] mounted controls in document PiP window')
 
   return () => {
+    pipWindow.removeEventListener('keydown', onKeyDown, true)
     video.removeEventListener('play', onPlay)
     video.removeEventListener('pause', onPause)
     console.log('[documentPipChrome] unmounted control listeners')
