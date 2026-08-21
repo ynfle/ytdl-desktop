@@ -1,9 +1,12 @@
-import { BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { LOG } from './constants'
 import { state } from './app-state'
-import { bindFloatingPlayerInvokeToWebContents } from './floating-player-ipc'
+import {
+  bindFloatingPlayerInvokeToWebContents,
+  closeFloatingPlayerBecauseMainWindowClosed
+} from './floating-player-ipc'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -25,6 +28,15 @@ export function createWindow(): void {
 
   state.mainWindow.on('ready-to-show', () => {
     state.mainWindow?.show()
+  })
+
+  // PiP is its own BrowserWindow (not a child), so closing the main window would otherwise
+  // leave it alive and skip `window-all-closed`. Close PiP and quit together.
+  state.mainWindow.on('closed', () => {
+    console.info(LOG, 'main window closed: close floating PiP and quit')
+    state.mainWindow = null
+    closeFloatingPlayerBecauseMainWindowClosed()
+    app.quit()
   })
 
   state.mainWindow.webContents.setWindowOpenHandler((details) => {
