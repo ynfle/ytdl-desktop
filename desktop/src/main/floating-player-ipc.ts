@@ -421,6 +421,33 @@ async function handleControlFloatingPlayer(
   }
 }
 
+/**
+ * Tear down floating PiP because the main window is gone.
+ * Skips renderer notify (the main `webContents` is already destroyed) and does not wait on IPC.
+ */
+export function closeFloatingPlayerBecauseMainWindowClosed(): void {
+  const win = state.floatingPlayerWindow
+  if (!win || win.isDestroyed()) {
+    console.info(LOG, 'main window closed: no floating PiP window to close')
+    return
+  }
+  console.info(LOG, 'main window closed: closing floating PiP so it cannot outlive the main window')
+  state.floatingPlayerSkipNextClosedNotify = true
+  state.floatingPlayerCloseReason = 'user'
+  persistFloatingPlayerBoundsFromWindow(win)
+  try {
+    win.close()
+  } catch (e) {
+    console.warn(LOG, 'closeFloatingPlayerBecauseMainWindowClosed: close failed, destroying', e)
+    try {
+      win.destroy()
+    } catch (destroyErr) {
+      console.warn(LOG, 'closeFloatingPlayerBecauseMainWindowClosed: destroy failed', destroyErr)
+    }
+  }
+  state.floatingPlayerWindow = null
+}
+
 async function handleCloseFloatingPlayer(): Promise<void> {
   state.floatingPlayerCloseReason = 'user'
   if (state.floatingPlayerWindow && !state.floatingPlayerWindow.isDestroyed()) {
