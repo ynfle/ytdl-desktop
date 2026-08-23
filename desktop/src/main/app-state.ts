@@ -22,6 +22,8 @@ export const state = {
   floatingPlayerCloseReason: 'user' as 'user' | 'ended' | 'replace',
   lastFloatingPlayerReportedTime: 0,
   floatingPlayerResumePlaying: false,
+  /** True once the main window starts closing. PiP sync must not touch destroyed webContents. */
+  isShuttingDown: false,
   syncRunning: false,
   channelMetaRunning: false,
   /** Bulk podcast metadata resolve (yt-dlp) in progress. */

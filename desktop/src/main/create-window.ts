@@ -30,12 +30,17 @@ export function createWindow(): void {
     state.mainWindow?.show()
   })
 
-  // PiP is its own BrowserWindow (not a child), so closing the main window would otherwise
-  // leave it alive and skip `window-all-closed`. Close PiP and quit together.
-  state.mainWindow.on('closed', () => {
-    console.info(LOG, 'main window closed: close floating PiP and quit')
-    state.mainWindow = null
+  // Destroy PiP during `close` (window still alive). Doing this from `closed` is too late on
+  // Windows: sibling `close()` can no-op, and PiP `beforeunload` can cancel `app.quit()`.
+  state.mainWindow.on('close', () => {
+    console.info(LOG, 'main window close: destroy floating PiP')
+    state.isShuttingDown = true
     closeFloatingPlayerBecauseMainWindowClosed()
+  })
+
+  state.mainWindow.on('closed', () => {
+    console.info(LOG, 'main window closed: quit so the process cannot outlive the UI')
+    state.mainWindow = null
     app.quit()
   })
 

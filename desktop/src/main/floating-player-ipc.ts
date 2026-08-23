@@ -166,6 +166,34 @@ function bumpMacFloatingStack(win: BrowserWindow): void {
   }
 }
 
+/**
+ * Send IPC to the main renderer without throwing if that window is already gone.
+ * `main?.webContents` still *reads* webContents on a destroyed BrowserWindow, which throws
+ * `TypeError: Object has been destroyed` and aborts quit (PiP stays open).
+ */
+function sendToMainRenderer(channel: string, payload?: unknown): void {
+  if (state.isShuttingDown) {
+    console.debug(LOG, 'skip send to main (shutting down)', channel)
+    return
+  }
+  const main = state.mainWindow
+  if (!main || main.isDestroyed()) {
+    console.debug(LOG, 'skip send to main (window gone)', channel)
+    return
+  }
+  try {
+    const wc = main.webContents
+    if (!wc || wc.isDestroyed()) {
+      console.debug(LOG, 'skip send to main (webContents gone)', channel)
+      return
+    }
+    if (payload === undefined) wc.send(channel)
+    else wc.send(channel, payload)
+  } catch (e) {
+    console.warn(LOG, 'send to main failed', channel, e)
+  }
+}
+
 /** Stable refs so we can `ipcMain.off` without `removeAllListeners` (safer on Electron 39 ipcMain). */
 function onFloatingClosing(_e: IpcMainEvent, t: unknown): void {
   const n = typeof t === 'number' ? t : Number(t)
@@ -175,16 +203,13 @@ function onFloatingClosing(_e: IpcMainEvent, t: unknown): void {
 
 function onFloatingEnded(): void {
   console.info(LOG, 'floating-player:ended (notify main; keep window for hot-swap)')
-  const wc = state.mainWindow?.webContents
-  if (wc && !wc.isDestroyed()) {
-    wc.send('playback:floatingPlayerEnded')
-  }
+  sendToMainRenderer('playback:floatingPlayerEnded')
 }
 
 function onFloatingError(_e: IpcMainEvent, payload: { message?: string }): void {
   const message = payload?.message ?? 'unknown'
   console.error(LOG, 'floating-player:error', message)
-  state.mainWindow?.webContents?.send('playback:floatingPlayerError', { message })
+  sendToMainRenderer('playback:floatingPlayerError', { message })
 }
 
 /** Keep last known time + play state so `closed` is accurate even if `closing` IPC is missed. */
@@ -200,25 +225,27 @@ function resolveFloatingPlayerWindowTitle(opts: FloatingPlayerOpenPayload): stri
 }
 
 function onFloatingSync(_e: IpcMainEvent, raw: unknown): void {
-  const p = raw as Partial<FloatingPlayerSyncPayload>
-  const t = typeof p.currentTime === 'number' && Number.isFinite(p.currentTime) ? p.currentTime : 0
-  const d = typeof p.duration === 'number' && Number.isFinite(p.duration) ? p.duration : 0
-  const playing = Boolean(p.playing)
-  if (t >= 0) state.lastFloatingPlayerReportedTime = t
-  state.floatingPlayerResumePlaying = playing
-  const wc = state.mainWindow?.webContents
-  if (!wc || wc.isDestroyed()) return
-  const payload: FloatingPlayerSyncPayload = {
-    currentTime: Math.max(0, t),
-    duration: Math.max(0, d),
-    playing
+  try {
+    const p = raw as Partial<FloatingPlayerSyncPayload>
+    const t = typeof p.currentTime === 'number' && Number.isFinite(p.currentTime) ? p.currentTime : 0
+    const d = typeof p.duration === 'number' && Number.isFinite(p.duration) ? p.duration : 0
+    const playing = Boolean(p.playing)
+    if (t >= 0) state.lastFloatingPlayerReportedTime = t
+    state.floatingPlayerResumePlaying = playing
+    const payload: FloatingPlayerSyncPayload = {
+      currentTime: Math.max(0, t),
+      duration: Math.max(0, d),
+      playing
+    }
+    sendToMainRenderer('playback:floatingPlayerSync', payload)
+    console.debug(LOG, 'floating-player:sync', {
+      t: payload.currentTime,
+      d: payload.duration,
+      playing: payload.playing
+    })
+  } catch (e) {
+    console.warn(LOG, 'onFloatingSync failed (ignored so quit can continue)', e)
   }
-  wc.send('playback:floatingPlayerSync', payload)
-  console.debug(LOG, 'floating-player:sync', {
-    t: payload.currentTime,
-    d: payload.duration,
-    playing: payload.playing
-  })
 }
 
 async function handleOpenFloatingPlayer(
@@ -338,17 +365,12 @@ async function handleOpenFloatingPlayer(
         state.floatingPlayerCloseReason = 'user'
         return
       }
-      const wc = state.mainWindow?.webContents
-      if (!wc || wc.isDestroyed()) {
-        state.floatingPlayerCloseReason = 'user'
-        return
-      }
       if (reason === 'ended') {
-        wc.send('playback:floatingPlayerEnded')
+        sendToMainRenderer('playback:floatingPlayerEnded')
       } else if (reason === 'replace') {
         /* Should not happen without skipNotify; no renderer notify */
       } else {
-        wc.send('playback:floatingPlayerClosed', {
+        sendToMainRenderer('playback:floatingPlayerClosed', {
           currentTime: state.lastFloatingPlayerReportedTime,
           resumePlaying: state.floatingPlayerResumePlaying
         })
@@ -422,30 +444,42 @@ async function handleControlFloatingPlayer(
 }
 
 /**
- * Tear down floating PiP because the main window is gone.
- * Skips renderer notify (the main `webContents` is already destroyed) and does not wait on IPC.
+ * Destroy floating PiP (and any other non-main BrowserWindows) during main-window shutdown.
+ *
+ * Must use `destroy()`, not `close()`. The PiP page listens for `beforeunload`; `close()` can
+ * cancel that close and abort `app.quit()` on Windows, leaving PiP running after the main
+ * window is already gone. `destroy()` skips `beforeunload` / `close` and still emits `closed`.
  */
 export function closeFloatingPlayerBecauseMainWindowClosed(): void {
+  const main = state.mainWindow
   const win = state.floatingPlayerWindow
-  if (!win || win.isDestroyed()) {
-    console.info(LOG, 'main window closed: no floating PiP window to close')
-    return
-  }
-  console.info(LOG, 'main window closed: closing floating PiP so it cannot outlive the main window')
-  state.floatingPlayerSkipNextClosedNotify = true
-  state.floatingPlayerCloseReason = 'user'
-  persistFloatingPlayerBoundsFromWindow(win)
-  try {
-    win.close()
-  } catch (e) {
-    console.warn(LOG, 'closeFloatingPlayerBecauseMainWindowClosed: close failed, destroying', e)
+  if (win && !win.isDestroyed()) {
+    console.info(LOG, 'destroying floating PiP so it cannot outlive the main window', {
+      id: win.id
+    })
+    state.floatingPlayerSkipNextClosedNotify = true
+    state.floatingPlayerCloseReason = 'user'
+    persistFloatingPlayerBoundsFromWindow(win)
     try {
       win.destroy()
-    } catch (destroyErr) {
-      console.warn(LOG, 'closeFloatingPlayerBecauseMainWindowClosed: destroy failed', destroyErr)
+    } catch (e) {
+      console.warn(LOG, 'closeFloatingPlayerBecauseMainWindowClosed: destroy failed', e)
     }
+  } else {
+    console.info(LOG, 'no floating PiP window to destroy')
   }
   state.floatingPlayerWindow = null
+
+  // DevTools or other leftover windows can also keep the process alive after main closes.
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w === main || w.isDestroyed()) continue
+    console.info(LOG, 'destroy leftover BrowserWindow on main shutdown', { id: w.id })
+    try {
+      w.destroy()
+    } catch (e) {
+      console.warn(LOG, 'leftover BrowserWindow destroy failed', e)
+    }
+  }
 }
 
 async function handleCloseFloatingPlayer(): Promise<void> {
