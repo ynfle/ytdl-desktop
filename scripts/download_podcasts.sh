@@ -81,6 +81,7 @@ download_podcasts() {
         echo "[ytdl] write-thumbnail only (use desktop app sync for repair/embed)" >&2
 
         yt-dlp \
+            --compat-options no-certifi \
             --playlist-items 1-10 \
             --download-archive "$PODCAST_ARCHIVE" \
             --ignore-errors \

@@ -2,7 +2,10 @@
  * Shared yt-dlp stdout JSON parsing and thumbnail heuristics for channel + podcast resolve.
  */
 
-/** Passed to every `runYtDlpCaptureStdout` that needs YouTube / RSS JSON metadata. */
+/**
+ * Passed to every `runYtDlpCaptureStdout` that needs YouTube / RSS JSON metadata.
+ * `--compat-options no-certifi` is injected in `yt-dlp-runner.ts`, not here.
+ */
 export const YT_DLP_BASE_JSON_ARGS = [
   '--no-warnings',
   '--ignore-errors',

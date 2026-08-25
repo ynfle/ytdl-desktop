@@ -14,6 +14,7 @@ YTDLP_ID_MAX_CHARS=16
 YTDLP_TRUNCATED_BASENAME="%(title).${YTDLP_TITLE_MAX_BYTES}B_%(id).${YTDLP_ID_MAX_CHARS}s"
 
 YTDLP_COMMON=(
+    --compat-options no-certifi
     --playlist-items 1-10
     --download-archive downloaded.txt
     --ignore-errors
@@ -59,6 +60,7 @@ if [[ "$1" == "ytrec" ]]; then
     mkdir -p videos/rec
     echo "Downloading $count recommended videos..." >&2
     yt-dlp \
+        --compat-options no-certifi \
         --cookies-from-browser firefox \
         --remote-components ejs:github \
         --playlist-items 1-"$count" \
