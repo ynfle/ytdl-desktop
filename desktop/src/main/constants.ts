@@ -7,6 +7,12 @@ export const DISPLAY_META_TTL_MS = 7 * 24 * 60 * 60 * 1000
 /** Max concurrent yt-dlp metadata processes (channel name lookup). */
 export const CHANNEL_RESOLVE_CONCURRENCY = 4
 
+/**
+ * Max concurrent yt-dlp **download** processes within one sync job (channels, playlists, or podcasts).
+ * Lower than metadata concurrency: each worker is 720p/audio + ffmpeg, and YouTube/RSS throttle easily.
+ */
+export const SYNC_DOWNLOAD_CONCURRENCY = 3
+
 export const VIDEO_EXT = new Set(['.mp4', '.webm', '.mkv', '.m4v'])
 
 /** Audio extensions yt-dlp may write for RSS/podcast enclosures. */

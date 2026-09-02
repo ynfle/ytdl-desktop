@@ -82,24 +82,70 @@ export function runYtDlpCaptureStdout(args: string[], cwd: string): Promise<stri
   })
 }
 
+/**
+ * Prefix each complete line (and `\r` progress updates) so concurrent yt-dlp streams stay readable.
+ * Leftover text without a terminator is flushed on close.
+ */
+function createLinePrefixer(prefix: string, write: (s: string) => void): {
+  push: (chunk: string) => void
+  flush: () => void
+} {
+  let pending = ''
+  const emit = (line: string) => {
+    write(`${prefix}${line}\n`)
+  }
+  return {
+    push(chunk: string) {
+      pending += chunk
+      const parts = pending.split(/\r?\n|\r/)
+      pending = parts.pop() ?? ''
+      for (const line of parts) emit(line)
+    },
+    flush() {
+      if (pending.length > 0) {
+        emit(pending)
+        pending = ''
+      }
+    }
+  }
+}
+
+export type RunYtDlpOptions = {
+  /** Prepended to each stdout/stderr line in the sync log (e.g. `[ytdl:@handle] `). */
+  logPrefix?: string
+}
+
 /** Spawn yt-dlp; stream stdout/stderr to renderer. */
-export function runYtDlp(args: string[], cwd: string): Promise<{ code: number | null }> {
+export function runYtDlp(
+  args: string[],
+  cwd: string,
+  options?: RunYtDlpOptions
+): Promise<{ code: number | null }> {
   const argv = withYtDlpNoCertifi(args)
-  console.info(LOG, 'spawn yt-dlp', { args: argv, cwd })
+  const logPrefix = options?.logPrefix
+  console.info(LOG, 'spawn yt-dlp', { args: argv, cwd, logPrefix: logPrefix ?? null })
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn('yt-dlp', argv, {
       cwd,
       env: { ...process.env },
       shell: false
     })
-    child.stdout?.on('data', (buf: Buffer) => broadcastLog(buf.toString()))
-    child.stderr?.on('data', (buf: Buffer) => broadcastLog(buf.toString()))
+    const prefixer = logPrefix ? createLinePrefixer(logPrefix, broadcastLog) : null
+    const onData = (buf: Buffer) => {
+      const s = buf.toString()
+      if (prefixer) prefixer.push(s)
+      else broadcastLog(s)
+    }
+    child.stdout?.on('data', onData)
+    child.stderr?.on('data', onData)
     child.on('error', (err) => {
+      prefixer?.flush()
       console.error(LOG, 'yt-dlp spawn error', err)
       rejectPromise(err)
     })
     child.on('close', (code) => {
-      console.info(LOG, 'yt-dlp exit', code)
+      prefixer?.flush()
+      console.info(LOG, 'yt-dlp exit', code, { logPrefix: logPrefix ?? null })
       resolvePromise({ code })
     })
   })
