@@ -14,13 +14,19 @@ import {
 import { repairPodcastEpisodeThumbnailsInFolder } from './podcast-episode-thumbnail'
 import { folderIdFromFeedUrl } from './podcast-input'
 import { readChannelsFile, readPlaylistsLinesOrEmpty, readPodcastsLinesOrEmpty } from './library-scan'
-import { LOG, SYNC_DOWNLOAD_CONCURRENCY } from './constants'
+import { LOG, PODCAST_SYNC_MAX_EPISODES, SYNC_DOWNLOAD_CONCURRENCY } from './constants'
 import {
+  appendArchiveRecords,
+  archiveLookupIdSet,
   createAsyncMutex,
   createYoutubeIdClaimSet,
+  parseArchiveLines,
+  podcastArchiveLookupKeys,
+  podcastItemAlreadyArchived,
   readArchiveVideoIds,
   withTempDownloadArchive
 } from './download-archive'
+import { formatPlaylistItemsSpec, loadPodcastRssWindow } from './podcast-rss'
 import { runYtDlp, runYtDlpCaptureStdout, runWithConcurrency } from './yt-dlp-runner'
 import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
@@ -306,9 +312,81 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
       feedPreview
     })
     await withTempDownloadArchive(archiveMutex, archiveAbs, async (tempArchive) => {
+      // yt-dlp often records rotating Beehiiv/Simplecast CDN URLs as the archive id, so
+      // `--download-archive` alone re-downloads the latest N after a library delete.
+      // Gate on RSS <guid> (and enclosure aliases) before invoking yt-dlp.
+      const rssItems = await loadPodcastRssWindow(feedUrl, PODCAST_SYNC_MAX_EPISODES)
+      let playlistItems = `1-${PODCAST_SYNC_MAX_EPISODES}`
+      let pending = rssItems
+      if (rssItems.length > 0) {
+        let archiveText = ''
+        try {
+          archiveText = await fs.readFile(tempArchive, 'utf-8')
+        } catch (e) {
+          console.warn(LOG, 'podcast sync: temp archive read failed; treat as empty', {
+            folderId,
+            tempArchive,
+            e
+          })
+        }
+        const archiveIds = archiveLookupIdSet(parseArchiveLines(archiveText))
+        const alreadyArchived = rssItems.filter((item) => {
+          const keys = podcastArchiveLookupKeys(item.guid, item.enclosureUrl)
+          const archived = podcastItemAlreadyArchived(archiveIds, keys)
+          console.info(LOG, 'podcast sync: rss item archive check', {
+            folderId,
+            playlistIndex: item.playlistIndex,
+            titlePreview: item.title.slice(0, 48),
+            guidPreview: item.guid.slice(0, 64),
+            archived
+          })
+          return archived
+        })
+        pending = rssItems.filter((item) => !alreadyArchived.includes(item))
+        // Upgrade filename/CDN archive hits to stable guids so a later URL rotation still skips.
+        if (alreadyArchived.length > 0) {
+          const upgraded = await appendArchiveRecords(
+            tempArchive,
+            alreadyArchived.map((item) => `generic ${item.guid}`)
+          )
+          console.info(LOG, 'podcast sync: upgraded archived items to rss guids', {
+            folderId,
+            upgraded,
+            alreadyArchived: alreadyArchived.length
+          })
+        }
+        if (pending.length === 0) {
+          broadcastLog(
+            `${prefix}podcast: latest ${rssItems.length} episode(s) already in podcast-downloaded.txt; skip download\n`
+          )
+          console.info(LOG, 'podcast sync: all window episodes archived, skip yt-dlp', {
+            folderId,
+            window: rssItems.length
+          })
+          return
+        }
+        playlistItems = formatPlaylistItemsSpec(pending.map((i) => i.playlistIndex))
+        broadcastLog(
+          `${prefix}podcast: ${pending.length}/${rssItems.length} episode(s) not in archive (items ${playlistItems})\n`
+        )
+        console.info(LOG, 'podcast sync: downloading pending rss items', {
+          folderId,
+          playlistItems,
+          pending: pending.length,
+          window: rssItems.length
+        })
+      } else {
+        console.warn(LOG, 'podcast sync: rss window empty; falling back to yt-dlp playlist-items', {
+          folderId,
+          playlistItems
+        })
+        broadcastLog(
+          `${prefix}podcast: could not parse RSS guids; falling back to items ${playlistItems}\n`
+        )
+      }
       const args = [
         '--playlist-items',
-        '1-10',
+        playlistItems,
         '--download-archive',
         tempArchive,
         '--ignore-errors',
@@ -332,6 +410,18 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
         console.warn(LOG, 'podcast sync feed non-zero exit', { folderId, code })
       } else {
         console.info(LOG, 'podcast sync feed yt-dlp done', { folderId, code })
+      }
+      // Record stable RSS guids so a later library delete does not look like a new episode.
+      if (pending.length > 0 && rssItems.length > 0) {
+        const guidLines = pending.map((item) => `generic ${item.guid}`)
+        const added = await appendArchiveRecords(tempArchive, guidLines)
+        broadcastLog(`${prefix}podcast: recorded ${added} RSS guid(s) in archive\n`)
+        console.info(LOG, 'podcast sync: wrote rss guid archive lines', {
+          folderId,
+          added,
+          attempted: guidLines.length,
+          ytDlpCode: code
+        })
       }
     })
     const thumbRepair = await repairPodcastEpisodeThumbnailsInFolder(outDir, folderId)

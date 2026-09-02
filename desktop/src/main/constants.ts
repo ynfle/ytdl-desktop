@@ -13,6 +13,12 @@ export const CHANNEL_RESOLVE_CONCURRENCY = 4
  */
 export const SYNC_DOWNLOAD_CONCURRENCY = 3
 
+/**
+ * How many newest RSS items to consider on podcast sync (`--playlist-items 1-N`).
+ * Hosts like Beehiiv/Simplecast may rotate enclosure URLs; we still only look at this window.
+ */
+export const PODCAST_SYNC_MAX_EPISODES = 10
+
 export const VIDEO_EXT = new Set(['.mp4', '.webm', '.mkv', '.m4v'])
 
 /** Audio extensions yt-dlp may write for RSS/podcast enclosures. */
@@ -31,4 +37,11 @@ export const CHANNEL_LOGO_FETCH_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
+} as const
+
+/** Headers for fetching podcast RSS (Beehiiv/Simplecast reject a bare Node UA). */
+export const PODCAST_RSS_FETCH_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  Accept: 'application/rss+xml, application/xml, text/xml, */*;q=0.8'
 } as const

@@ -37,19 +37,136 @@ export function parseArchiveLines(text: string): string[] {
 }
 
 /**
+ * Id after the extractor key on a yt-dlp archive line (`youtube VIDEOID`, `generic https://…`).
+ * Skips `extractor playlist PLAYLISTID` rows so playlist ids are not treated as videos.
+ */
+export function archiveLineVideoId(line: string): string | null {
+  const trimmed = line.trim()
+  const sp = trimmed.indexOf(' ')
+  if (sp < 0) return null
+  const rest = trimmed.slice(sp + 1).trim()
+  if (!rest || rest.startsWith('playlist ') || rest === 'playlist') return null
+  return rest
+}
+
+/**
  * Video ids from `--download-archive` lines (`youtube VIDEOID`).
  * Skips `youtube playlist PLAYLISTID` rows so playlist ids are not treated as videos.
  */
 export function videoIdsFromArchiveLines(lines: string[]): string[] {
   const ids: string[] = []
   for (const line of lines) {
-    const parts = line.split(/\s+/).filter(Boolean)
-    if (parts.length < 2) continue
-    if (parts[1] === 'playlist') continue
-    const id = parts[1]
-    if (id) ids.push(id)
+    const id = archiveLineVideoId(line)
+    // YouTube claiming only needs the first token (`VIDEOID`), not a URL with spaces.
+    const first = id?.split(/\s+/)[0]
+    if (first) ids.push(first)
   }
   return ids
+}
+
+/** Drop query/hash from http(s) ids so rotating CDN signatures do not look like new episodes. */
+export function stripUrlQueryAndHash(id: string): string {
+  const t = id.trim()
+  if (!/^https?:\/\//i.test(t)) return t
+  try {
+    const u = new URL(t)
+    u.search = ''
+    u.hash = ''
+    return u.href
+  } catch {
+    return t
+  }
+}
+
+/**
+ * Approximate yt-dlp `InfoExtractor._generic_id`: last path segment, strip extension, unquote.
+ * Naive split (query stays on the filename) matches yt-dlp when the enclosure is a signed URL.
+ */
+export function genericIdFromUrl(url: string): string {
+  const noHash = url.split('#')[0] ?? url
+  const last = noHash.replace(/\/+$/, '').split('/').pop() ?? ''
+  let decoded = last
+  try {
+    decoded = decodeURIComponent(last)
+  } catch {
+    /* keep raw */
+  }
+  const dot = decoded.lastIndexOf('.')
+  const stem = dot > 0 ? decoded.slice(0, dot) : decoded
+  const q = stem.indexOf('?')
+  return (q >= 0 ? stem.slice(0, q) : stem).trim()
+}
+
+/**
+ * Lookup keys for one RSS episode so we can match yt-dlp archive rows even when
+ * the recorded id was a guid, enclosure URL, or `_generic_id` of a signed CDN URL.
+ */
+export function podcastArchiveLookupKeys(guid: string, enclosureUrl: string): string[] {
+  const keys = new Set<string>()
+  const add = (raw: string) => {
+    const t = raw.trim()
+    if (!t) return
+    keys.add(t)
+    keys.add(t.toLowerCase())
+    const stripped = stripUrlQueryAndHash(t)
+    if (stripped) {
+      keys.add(stripped)
+      keys.add(stripped.toLowerCase())
+    }
+    const genericId = genericIdFromUrl(t)
+    if (genericId) {
+      keys.add(genericId)
+      keys.add(genericId.toLowerCase())
+    }
+  }
+  add(guid)
+  add(enclosureUrl)
+  return [...keys]
+}
+
+/** Flatten archive lines into a set of ids + normalized aliases for podcast skip checks. */
+export function archiveLookupIdSet(lines: string[]): Set<string> {
+  const set = new Set<string>()
+  for (const line of lines) {
+    const id = archiveLineVideoId(line)
+    if (!id) continue
+    for (const key of podcastArchiveLookupKeys(id, id)) {
+      set.add(key)
+    }
+  }
+  return set
+}
+
+/** True when any RSS guid / enclosure alias is already in `podcast-downloaded.txt`. */
+export function podcastItemAlreadyArchived(archiveIds: Set<string>, keys: string[]): boolean {
+  for (const key of keys) {
+    if (archiveIds.has(key)) return true
+  }
+  return false
+}
+
+/**
+ * Append yt-dlp-style archive records (`generic <guid>`) if they are not already present.
+ * Used so the next sync can skip by RSS guid even when yt-dlp recorded a rotating CDN id.
+ */
+export async function appendArchiveRecords(archiveAbs: string, records: string[]): Promise<number> {
+  const existing = await readArchiveLines(archiveAbs)
+  const seen = new Set(existing)
+  let added = 0
+  for (const raw of records) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#') || seen.has(line)) continue
+    seen.add(line)
+    existing.push(line)
+    added++
+  }
+  if (added === 0) {
+    console.info(LOG, 'archive: append no new records', { archiveAbs })
+    return 0
+  }
+  await fs.writeFile(archiveAbs, `${existing.join('\n')}\n`, 'utf-8')
+  console.info(LOG, 'archive: appended records', { archiveAbs, added, total: existing.length })
+  return added
 }
 
 /** Read shared archive lines; missing file is an empty archive. */
