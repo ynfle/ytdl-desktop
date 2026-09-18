@@ -31,6 +31,14 @@ export const YTDLP_PODCAST_ID_SUFFIX_CHARS = 8
 /** `%(title).50B_%(id).8s` — human-readable stem for podcast `-o` templates. */
 export const YTDLP_PODCAST_BASENAME = `%(title).${YTDLP_PODCAST_TITLE_MAX_BYTES}B_%(id).${YTDLP_PODCAST_ID_SUFFIX_CHARS}s`
 
+/**
+ * Short id suffix baked into podcast basenames (`guid` with dashes stripped).
+ * Used both in `-o` and when matching an on-disk file back to an RSS item.
+ */
+export function podcastIdFilenameTail(episodeId: string): string {
+  return episodeId.replace(/-/g, '').slice(0, YTDLP_PODCAST_ID_SUFFIX_CHARS)
+}
+
 /** Truncate a UTF-8 string to at most `maxBytes` (yt-dlp `.NB` semantics). */
 export function truncateUtf8Bytes(s: string, maxBytes: number): string {
   const bytes = new TextEncoder().encode(s)
@@ -54,7 +62,7 @@ export function podcastReadableBasename(title: string, episodeId: string): strin
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '')
   stem = truncateUtf8Bytes(stem, YTDLP_PODCAST_TITLE_MAX_BYTES)
-  const idTail = episodeId.replace(/-/g, '').slice(0, YTDLP_PODCAST_ID_SUFFIX_CHARS)
+  const idTail = podcastIdFilenameTail(episodeId)
   return idTail.length > 0 ? `${stem}_${idTail}` : stem
 }
 
@@ -64,4 +72,13 @@ export function podcastReadableBasename(title: string, episodeId: string): strin
  */
 export function ytdlpPodcastOutputTemplate(folderId: string): string {
   return `videos/podcasts/${folderId}/${YTDLP_PODCAST_BASENAME}.%(ext)s`
+}
+
+/**
+ * Per-episode `-o` when downloading an RSS enclosure URL (no feed title from yt-dlp).
+ * `%%` so a title that contains `%` is not treated as a yt-dlp output template field.
+ */
+export function ytdlpPodcastEpisodeOutputTemplate(folderId: string, title: string, guid: string): string {
+  const stem = podcastReadableBasename(title, guid).replace(/%/g, '%%')
+  return `videos/podcasts/${folderId}/${stem}.%(ext)s`
 }

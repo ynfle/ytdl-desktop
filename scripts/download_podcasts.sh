@@ -79,7 +79,7 @@ download_podcasts() {
         echo "[ytdl] output: $PODCAST_ROOT/$folder_id" >&2
         echo "[ytdl] archive: $PODCAST_ARCHIVE" >&2
         echo "[ytdl] write-thumbnail only (use desktop app sync for repair/embed)" >&2
-        echo "[ytdl] note: desktop Sync podcasts also gates on RSS <guid> so rotating CDN ids do not re-download after a library delete" >&2
+        echo "[ytdl] note: desktop Sync podcasts gates on RSS <guid> and downloads pending enclosure URLs (yt-dlp --playlist-items on Beehiiv feeds can skip the newest episodes)" >&2
 
         yt-dlp \
             --compat-options no-certifi \

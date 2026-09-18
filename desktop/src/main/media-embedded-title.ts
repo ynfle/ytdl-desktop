@@ -49,38 +49,119 @@ export function ytDlpInfoJsonSidecarPaths(mediaAbsPath: string): string[] {
   return out
 }
 
-/** Parse yt-dlp `YYYYMMDD` date fields to UTC midnight epoch ms. */
-function parseYtDlpYyyymmddUtc(dateStr: string): number | null {
+/** Parse yt-dlp `YYYYMMDD` as a **local calendar date** (not UTC midnight).
+ * UTC midnight of that day is the previous evening in US timezones, so the library
+ * would show the wrong post date (e.g. Sep 15 instead of Sep 16).
+ */
+function parseYtDlpYyyymmddLocal(dateStr: string): number | null {
   if (!/^\d{8}$/.test(dateStr)) return null
   const y = Number(dateStr.slice(0, 4))
   const m = Number(dateStr.slice(4, 6)) - 1
   const d = Number(dateStr.slice(6, 8))
-  const ms = Date.UTC(y, m, d)
+  const ms = new Date(y, m, d).getTime()
   return Number.isFinite(ms) ? ms : null
 }
 
+/** ISO `YYYY-MM-DD` (optional time) used by some GenericIE / RSS-derived sidecars. */
+function parseIsoDateToMs(raw: string): number | null {
+  const t = raw.trim()
+  if (!t) return null
+  if (/^\d{8}$/.test(t)) return parseYtDlpYyyymmddLocal(t)
+  const ms = Date.parse(t)
+  return Number.isFinite(ms) && ms > 0 ? ms : null
+}
+
 /**
- * Upload / release time from a parsed yt-dlp `.info.json` object (epoch ms, UTC).
+ * yt-dlp `timestamp` is unix **seconds**; some writers store milliseconds (13+ digits).
+ */
+function epochMsFromUnixish(ts: number): number | null {
+  if (!Number.isFinite(ts) || ts <= 0) return null
+  if (ts > 1e12) return Math.floor(ts)
+  if (ts > 1e9) return Math.floor(ts) * 1000
+  return null
+}
+
+/**
+ * Upload / release time from a parsed yt-dlp `.info.json` object (epoch ms).
  * Prefers `timestamp` / `upload_date`; falls back to podcast-style `release_*`.
+ * Does **not** use `epoch` (that's yt-dlp extraction time, not the post date).
  */
 export function parseYtDlpUploadedAtMs(j: Record<string, unknown>): number | null {
   const ts = j.timestamp
-  if (typeof ts === 'number' && Number.isFinite(ts) && ts > 0) {
-    return Math.floor(ts) * 1000
+  if (typeof ts === 'number') {
+    const fromTs = epochMsFromUnixish(ts)
+    if (fromTs != null) return fromTs
+  } else if (typeof ts === 'string' && ts.trim()) {
+    const n = Number(ts)
+    const fromTs = epochMsFromUnixish(n)
+    if (fromTs != null) return fromTs
+    const fromIso = parseIsoDateToMs(ts)
+    if (fromIso != null) return fromIso
   }
   if (typeof j.upload_date === 'string') {
-    const fromUpload = parseYtDlpYyyymmddUtc(j.upload_date)
+    const fromUpload = parseIsoDateToMs(j.upload_date)
     if (fromUpload != null) return fromUpload
   }
   const rts = j.release_timestamp
-  if (typeof rts === 'number' && Number.isFinite(rts) && rts > 0) {
-    return Math.floor(rts) * 1000
+  if (typeof rts === 'number') {
+    const fromReleaseTs = epochMsFromUnixish(rts)
+    if (fromReleaseTs != null) return fromReleaseTs
+  } else if (typeof rts === 'string' && rts.trim()) {
+    const fromReleaseTs = epochMsFromUnixish(Number(rts))
+    if (fromReleaseTs != null) return fromReleaseTs
   }
   if (typeof j.release_date === 'string') {
-    const fromRelease = parseYtDlpYyyymmddUtc(j.release_date)
+    const fromRelease = parseIsoDateToMs(j.release_date)
     if (fromRelease != null) return fromRelease
   }
   return null
+}
+
+/** Clock `HH:MM:SS` / `MM:SS` or a numeric second count. */
+function parseClockDurationSec(raw: string): number | null {
+  const t = raw.trim()
+  if (!t) return null
+  if (/^\d+(\.\d+)?$/.test(t)) {
+    const n = Number(t)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+  const parts = t.split(':')
+  if (parts.length < 2 || parts.length > 3) return null
+  const nums = parts.map((p) => Number(p))
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null
+  const sec =
+    nums.length === 3 ? nums[0]! * 3600 + nums[1]! * 60 + nums[2]! : nums[0]! * 60 + nums[1]!
+  return sec > 0 ? sec : null
+}
+
+/**
+ * Duration in seconds from yt-dlp sidecar fields.
+ * Ignores JSON `null` (`Number(null) === 0` would otherwise show `0:00` in the library).
+ */
+export function parseInfoJsonDurationSec(j: Record<string, unknown>): number | null {
+  if (typeof j.duration === 'number' && Number.isFinite(j.duration) && j.duration > 0) {
+    return j.duration
+  }
+  if (typeof j.duration === 'string') {
+    const fromStr = parseClockDurationSec(j.duration)
+    if (fromStr != null) return fromStr
+  }
+  if (typeof j.duration_string === 'string') {
+    const fromLabel = parseClockDurationSec(j.duration_string)
+    if (fromLabel != null) return fromLabel
+  }
+  const approx = j.approx_duration
+  if (typeof approx === 'number' && Number.isFinite(approx) && approx > 0) return approx
+  return null
+}
+
+/** UTC `YYYYMMDD` for yt-dlp `upload_date` / `release_date`. */
+function yyyymmddUtcFromMs(ms: number): string {
+  const d = new Date(ms)
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${y}${m}${day}`
 }
 
 export type YtDlpInfoJsonScanFields = {
@@ -90,36 +171,183 @@ export type YtDlpInfoJsonScanFields = {
   duration: number | null
 }
 
-/** Read title + upload time from the first valid yt-dlp `.info.json` sidecar beside a media file. */
+/** Enclosure-URL downloads often set `title` to the CDN uuid (same as `id`); the library must not show that. */
+const EXTRACTOR_UUID_TITLE_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function isPlaceholderExtractorTitle(title: string, json: Record<string, unknown>): boolean {
+  const t = title.trim()
+  if (!t) return true
+  const id = typeof json.id === 'string' ? json.id.trim() : ''
+  // GenericIE enclosure downloads set `title` to the CDN filename/`id` (not the RSS episode name).
+  if (id.length > 0 && t === id) return true
+  if (EXTRACTOR_UUID_TITLE_RE.test(t)) return true
+  return false
+}
+
+/** Prefer `title`, then `fulltitle`, skipping GenericIE CDN/uuid placeholders. */
+function humanTitleFromInfoJson(json: Record<string, unknown>): string | null {
+  const candidates = [json.title, json.fulltitle]
+  for (const raw of candidates) {
+    if (typeof raw !== 'string') continue
+    const t = raw.trim()
+    if (t.length > 0 && !isPlaceholderExtractorTitle(t, json)) return t
+  }
+  return null
+}
+
+/** Read title + upload time from yt-dlp `.info.json` sidecars beside a media file. */
 export async function readYtDlpInfoJsonScanFields(mediaAbsPath: string): Promise<YtDlpInfoJsonScanFields> {
+  // Merge across `file.ext.info.json` and `file.info.json`; don't stop on a placeholder title
+  // just because that sidecar already has duration / upload date.
+  let best: YtDlpInfoJsonScanFields = { title: null, uploadedAtMs: null, duration: null }
   for (const p of ytDlpInfoJsonSidecarPaths(mediaAbsPath)) {
     try {
       const raw = await fs.readFile(p, 'utf8')
       const j = JSON.parse(raw) as Record<string, unknown>
-      let title: string | null = null
-      if (typeof j.title === 'string') {
-        const t = j.title.trim()
-        if (t.length > 0) title = t
-      }
+      const title = humanTitleFromInfoJson(j)
+      if (title && !best.title) best.title = title
       const uploadedAtMs = parseYtDlpUploadedAtMs(j)
-      // yt-dlp writes top-level `duration` in seconds; missing → null (not NaN).
-      const rawDuration = Number(j.duration)
-      const duration =
-        Number.isFinite(rawDuration) && rawDuration >= 0 ? rawDuration : null
-      if (title || uploadedAtMs != null || duration != null) {
-        console.info(LOG, 'readYtDlpInfoJsonScanFields', {
-          json: p.slice(-80),
-          titleLen: title?.length ?? 0,
-          uploadedAtMs,
-          duration
-        })
-        return { title, uploadedAtMs, duration }
-      }
+      if (best.uploadedAtMs == null && uploadedAtMs != null) best.uploadedAtMs = uploadedAtMs
+      const duration = parseInfoJsonDurationSec(j)
+      if (best.duration == null && duration != null) best.duration = duration
+      console.info(LOG, 'readYtDlpInfoJsonScanFields', {
+        json: p.slice(-80),
+        titleLen: title?.length ?? 0,
+        uploadedAtMs,
+        duration
+      })
+      if (best.title && best.uploadedAtMs != null && best.duration != null) return best
     } catch {
       /* missing or invalid */
     }
   }
-  return { title: null, uploadedAtMs: null, duration: null }
+  return best
+}
+
+/** Merge RSS title / duration / pubDate into a parsed yt-dlp info object. */
+function applyRssEpisodePatchToJson(
+  j: Record<string, unknown>,
+  title: string,
+  publishedAtMs: number | null,
+  durationSec: number | null
+): boolean {
+  let changed = false
+  const prevTitle = typeof j.title === 'string' ? j.title.trim() : ''
+  const prevFull = typeof j.fulltitle === 'string' ? j.fulltitle.trim() : ''
+  if (prevTitle !== title || prevFull !== title) {
+    j.title = title
+    j.fulltitle = title
+    if (typeof j.track === 'string' && j.track.trim().length > 0) j.track = title
+    changed = true
+  }
+  if (durationSec != null) {
+    const rounded = Math.round(durationSec)
+    const prevDuration = parseInfoJsonDurationSec(j)
+    if (prevDuration == null || Math.abs(prevDuration - rounded) >= 0.5) {
+      j.duration = rounded
+      changed = true
+    }
+  }
+  if (publishedAtMs != null) {
+    const tsSec = Math.floor(publishedAtMs / 1000)
+    const ymd = yyyymmddUtcFromMs(publishedAtMs)
+    if (j.timestamp !== tsSec || j.upload_date !== ymd || j.release_date !== ymd) {
+      j.timestamp = tsSec
+      j.release_timestamp = tsSec
+      j.upload_date = ymd
+      j.release_date = ymd
+      changed = true
+    }
+  }
+  return changed
+}
+
+export type RssEpisodeInfoJsonPatch = {
+  title: string
+  publishedAtMs?: number | null
+  durationSec?: number | null
+}
+
+function normalizeRssEpisodePatch(patch: RssEpisodeInfoJsonPatch): {
+  title: string
+  publishedAtMs: number | null
+  durationSec: number | null
+} | null {
+  const title = patch.title.trim()
+  if (!title) return null
+  const publishedAtMs =
+    typeof patch.publishedAtMs === 'number' && Number.isFinite(patch.publishedAtMs) && patch.publishedAtMs > 0
+      ? patch.publishedAtMs
+      : null
+  const durationSec =
+    typeof patch.durationSec === 'number' && Number.isFinite(patch.durationSec) && patch.durationSec > 0
+      ? patch.durationSec
+      : null
+  return { title, publishedAtMs, durationSec }
+}
+
+/**
+ * Write authoritative RSS metadata to the existing yt-dlp sidecar after download.
+ * `runYtDlp` resolves only after the process exits, so no retry or guessed path is needed.
+ */
+export async function writeRssEpisodeIntoYtDlpInfoJson(
+  mediaAbsPath: string,
+  patch: RssEpisodeInfoJsonPatch
+): Promise<boolean> {
+  const norm = normalizeRssEpisodePatch(patch)
+  if (!norm) return false
+  for (const jsonAbsPath of ytDlpInfoJsonSidecarPaths(mediaAbsPath)) {
+    try {
+      const raw = await fs.readFile(jsonAbsPath, 'utf8')
+      const parsed = JSON.parse(raw) as unknown
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        console.warn(LOG, 'podcast info.json is not an object', { json: jsonAbsPath.slice(-80) })
+        continue
+      }
+      const json = parsed as Record<string, unknown>
+      if (!applyRssEpisodePatchToJson(json, norm.title, norm.publishedAtMs, norm.durationSec)) {
+        console.info(LOG, 'podcast info.json already has RSS metadata', {
+          json: jsonAbsPath.slice(-80)
+        })
+        return false
+      }
+      await fs.writeFile(jsonAbsPath, `${JSON.stringify(json, null, 2)}\n`, 'utf8')
+      console.info(LOG, 'podcast info.json RSS metadata written', {
+        json: jsonAbsPath.slice(-80),
+        titlePreview: norm.title.slice(0, 48),
+        durationSec: norm.durationSec,
+        publishedAtMs: norm.publishedAtMs
+      })
+      return true
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') continue
+      console.warn(LOG, 'podcast info.json RSS metadata write failed', {
+        json: jsonAbsPath.slice(-80),
+        err: String(e).slice(0, 200)
+      })
+      return false
+    }
+  }
+  console.warn(LOG, 'podcast info.json missing beside downloaded media', {
+    media: mediaAbsPath.slice(-80)
+  })
+  return false
+}
+
+/** Probe container duration when `.info.json` omitted it (typical GenericIE enclosure MP3). */
+export async function probeMediaDurationSec(absPath: string): Promise<number | null> {
+  try {
+    const meta = await parseFile(absPath, { skipCovers: true, duration: true })
+    const d = meta.format.duration
+    if (typeof d === 'number' && Number.isFinite(d) && d > 0) {
+      console.info(LOG, 'probeMediaDurationSec', { sample: absPath.slice(-64), duration: d })
+      return d
+    }
+  } catch (e) {
+    console.info(LOG, 'probeMediaDurationSec failed', { sample: absPath.slice(-64), err: String(e).slice(0, 160) })
+  }
+  return null
 }
 
 /** yt-dlp `--write-info-json` / default sidecar: `Video.mp4.info.json` (sometimes `Video.info.json`). */
@@ -134,9 +362,17 @@ export async function resolveLibraryScanMetadata(mediaAbsPath: string): Promise<
   uploadedAtMs: number | null
   duration: number | null
 }> {
-  const { title, uploadedAtMs, duration } = await readYtDlpInfoJsonScanFields(mediaAbsPath)
+  const { title, uploadedAtMs, duration: jsonDuration } = await readYtDlpInfoJsonScanFields(mediaAbsPath)
   const displayTitle = title ?? humanizeRestrictFilename(basename(mediaAbsPath))
-  return { displayTitle, uploadedAtMs, duration}
+  let duration = jsonDuration
+  if (duration == null) {
+    duration = await probeMediaDurationSec(mediaAbsPath)
+    console.info(LOG, 'resolveLibraryScanMetadata probed duration', {
+      sample: mediaAbsPath.slice(-64),
+      duration
+    })
+  }
+  return { displayTitle, uploadedAtMs, duration }
 }
 
 /**

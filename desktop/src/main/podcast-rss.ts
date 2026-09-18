@@ -8,8 +8,12 @@ export type PodcastRssItem = {
   guid: string
   /** Enclosure media URL (may be a tracking redirect or signed CDN link). */
   enclosureUrl: string
-  /** Episode title from the feed (for logs). */
+  /** Episode title from RSS `<title>` (written into `.info.json` for the library). */
   title: string
+  /** `pubDate` / `dc:date` / Atom `published` as epoch ms, when parseable. */
+  publishedAtMs: number | null
+  /** `itunes:duration` (clock or seconds), when parseable. */
+  durationSec: number | null
 }
 
 const RSS_FETCH_TIMEOUT_MS = 30_000
@@ -30,7 +34,23 @@ export function decodeXmlText(raw: string): string {
 }
 
 function firstTagInner(block: string, tag: string): string | null {
-  const re = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, 'i')
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`<${escaped}\\b[^>]*>([\\s\\S]*?)</${escaped}>`, 'i')
+  const m = re.exec(block)
+  if (!m?.[1]) return null
+  const text = decodeXmlText(m[1])
+  return text.length > 0 ? text : null
+}
+
+/** Match `pubDate` / `itunes:duration` even when the feed uses a different namespace prefix. */
+function firstLocalTagInner(block: string, localName: string): string | null {
+  const exact = firstTagInner(block, localName)
+  if (exact) return exact
+  const escaped = localName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(
+    `<(?:[\\w.-]+:)?${escaped}\\b[^>]*>([\\s\\S]*?)</(?:[\\w.-]+:)?${escaped}>`,
+    'i'
+  )
   const m = re.exec(block)
   if (!m?.[1]) return null
   const text = decodeXmlText(m[1])
@@ -43,8 +63,75 @@ function enclosureUrlFromItem(block: string): string | null {
     const url = decodeXmlText(m[1])
     return url.length > 0 ? url : null
   }
+  const media = /<media:content\b[^>]*\burl\s*=\s*["']([^"']+)["']/i.exec(block)
+  if (media?.[1]) {
+    const url = decodeXmlText(media[1])
+    return url.length > 0 ? url : null
+  }
   const link = firstTagInner(block, 'link')
   return link && /^https?:\/\//i.test(link) ? link : null
+}
+
+/**
+ * Hide CDATA bodies before splitting `<item>` so a `</item>` inside a description
+ * cannot truncate the block and drop `pubDate` / `itunes:duration`.
+ */
+function withMaskedRssCdata(xml: string): { masked: string; restore: (block: string) => string } {
+  const parts: string[] = []
+  const masked = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, (full) => {
+    const i = parts.length
+    parts.push(full)
+    return `<![CDATA[\u0001${i}\u0001]]>`
+  })
+  const restore = (block: string): string =>
+    block.replace(/<!\[CDATA\[\u0001(\d+)\u0001\]\]>/g, (_, n) => parts[Number(n)] ?? '')
+  return { masked, restore }
+}
+
+/**
+ * Parse `itunes:duration` / `HH:MM:SS` / raw seconds for the library duration column.
+ * Returns null when the tag is missing or not a positive length.
+ */
+export function parseRssClockDurationSec(raw: string): number | null {
+  const t = raw.trim()
+  if (!t) return null
+  if (/^\d+(\.\d+)?$/.test(t)) {
+    const n = Number(t)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+  const parts = t.split(':')
+  if (parts.length < 2 || parts.length > 3) return null
+  const nums = parts.map((p) => Number(p))
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null
+  const sec =
+    nums.length === 3 ? nums[0]! * 3600 + nums[1]! * 60 + nums[2]! : nums[0]! * 60 + nums[1]!
+  return sec > 0 ? sec : null
+}
+
+/** RFC 2822 `pubDate`, ISO `dc:date`, or Atom `published`/`updated` → epoch ms. */
+function publishedAtMsFromItem(block: string): number | null {
+  const raw =
+    firstLocalTagInner(block, 'pubDate') ??
+    firstTagInner(block, 'dc:date') ??
+    firstLocalTagInner(block, 'published') ??
+    firstLocalTagInner(block, 'updated')
+  if (!raw) return null
+  const ms = Date.parse(raw)
+  if (!Number.isFinite(ms) || ms <= 0) {
+    console.info(LOG, 'podcast rss: unparsed pubDate', { preview: raw.slice(0, 48) })
+    return null
+  }
+  return ms
+}
+
+function durationSecFromItem(block: string): number | null {
+  const raw = firstTagInner(block, 'itunes:duration') ?? firstLocalTagInner(block, 'duration')
+  if (!raw) return null
+  const sec = parseRssClockDurationSec(raw)
+  if (sec == null) {
+    console.info(LOG, 'podcast rss: unparsed itunes:duration', { preview: raw.slice(0, 24) })
+  }
+  return sec
 }
 
 function guidFromItem(block: string, enclosureUrl: string): string {
@@ -66,10 +153,11 @@ function guidFromItem(block: string, enclosureUrl: string): string {
  */
 export function parsePodcastRssItems(xml: string, limit: number = PODCAST_SYNC_MAX_EPISODES): PodcastRssItem[] {
   const items: PodcastRssItem[] = []
+  const { masked, restore } = withMaskedRssCdata(xml)
   const re = /<item\b[^>]*>([\s\S]*?)<\/item>/gi
   let match: RegExpExecArray | null
-  while ((match = re.exec(xml)) !== null && items.length < limit) {
-    const block = match[1] ?? ''
+  while ((match = re.exec(masked)) !== null && items.length < limit) {
+    const block = restore(match[1] ?? '')
     const enclosureUrl = enclosureUrlFromItem(block)
     if (!enclosureUrl) {
       console.info(LOG, 'podcast rss: skip item without enclosure/link', { index: items.length + 1 })
@@ -77,14 +165,23 @@ export function parsePodcastRssItems(xml: string, limit: number = PODCAST_SYNC_M
     }
     const guid = guidFromItem(block, enclosureUrl)
     const title = firstTagInner(block, 'title') ?? ''
+    const publishedAtMs = publishedAtMsFromItem(block)
+    const durationSec = durationSecFromItem(block)
     items.push({
       playlistIndex: items.length + 1,
       guid,
       enclosureUrl,
-      title
+      title,
+      publishedAtMs,
+      durationSec
     })
   }
-  console.info(LOG, 'podcast rss: parsed items', { count: items.length, limit })
+  console.info(LOG, 'podcast rss: parsed items', {
+    count: items.length,
+    limit,
+    withPubDate: items.filter((i) => i.publishedAtMs != null).length,
+    withDuration: items.filter((i) => i.durationSec != null).length
+  })
   return items
 }
 

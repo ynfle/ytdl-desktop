@@ -3,17 +3,21 @@ import { join } from 'path'
 import { promises as fs } from 'fs'
 import {
   ytdlpChannelOutputTemplate,
+  ytdlpPodcastEpisodeOutputTemplate,
   ytdlpPodcastOutputTemplate,
   ytdlpYtrecOutputTemplate
 } from '../../shared/ytdl-output-template'
 import { broadcastLibraryStale, broadcastLog } from './broadcast'
 import {
   cleanupLegacyPodcastDuplicatesInFolder,
+  findPodcastMediaAbsForRssItem,
+  loadPodcastFolderLookupKeys,
   migrateUuidPodcastFilesToReadable
 } from './podcast-dedupe'
 import { repairPodcastEpisodeThumbnailsInFolder } from './podcast-episode-thumbnail'
 import { folderIdFromFeedUrl } from './podcast-input'
 import { readChannelsFile, readPlaylistsLinesOrEmpty, readPodcastsLinesOrEmpty } from './library-scan'
+import { probeMediaDurationSec, writeRssEpisodeIntoYtDlpInfoJson } from './media-embedded-title'
 import { LOG, PODCAST_SYNC_MAX_EPISODES, SYNC_DOWNLOAD_CONCURRENCY } from './constants'
 import {
   appendArchiveRecords,
@@ -26,7 +30,7 @@ import {
   readArchiveVideoIds,
   withTempDownloadArchive
 } from './download-archive'
-import { formatPlaylistItemsSpec, loadPodcastRssWindow } from './podcast-rss'
+import { loadPodcastRssWindow } from './podcast-rss'
 import { runYtDlp, runYtDlpCaptureStdout, runWithConcurrency } from './yt-dlp-runner'
 import { startVideosLibraryWatch } from './videos-watch-during-sync'
 
@@ -275,6 +279,24 @@ export async function syncPodcastsJob(dataRoot: string): Promise<void> {
   await withVideosLibraryWatchDuringJob(dataRoot, () => runSyncPodcastsJobInner(dataRoot))
 }
 
+/** Force RSS episode title into yt-dlp `title`/`fulltitle` (info.json + embedded tags). */
+function ytDlpForceTitleArgs(rssTitle: string): string[] {
+  const title = rssTitle.trim()
+  if (!title) return []
+  // Python re.sub replacement: backslashes are escapes (`\1`), so double them.
+  const replacement = title.replace(/\\/g, '\\\\')
+  return [
+    '--replace-in-metadata',
+    'title',
+    '(?s)^.*$',
+    replacement,
+    '--replace-in-metadata',
+    'fulltitle',
+    '(?s)^.*$',
+    replacement
+  ]
+}
+
 /** Short temp dir for yt-dlp/ffmpeg post-process on Windows (avoids MAX_PATH on `*.temp.mp3`). */
 function ytDlpWindowsTempPathArgs(): string[] {
   if (process.platform !== 'win32') return []
@@ -312,10 +334,9 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
       feedPreview
     })
     await withTempDownloadArchive(archiveMutex, archiveAbs, async (tempArchive) => {
-      // yt-dlp often records rotating Beehiiv/Simplecast CDN URLs as the archive id, so
-      // `--download-archive` alone re-downloads the latest N after a library delete.
-      // Gate on RSS <guid> (and enclosure aliases) before invoking yt-dlp.
-      const rssItems = await loadPodcastRssWindow(feedUrl, PODCAST_SYNC_MAX_EPISODES)
+      // Skip when the RSS guid (or enclosure alias) is already in the archive.
+      // Only *write* guids after a file lands — never archive an episode we did not download.
+      const rssItems = await loadPodcastRssWindow(feedUrl)
       let playlistItems = `1-${PODCAST_SYNC_MAX_EPISODES}`
       let pending = rssItems
       if (rssItems.length > 0) {
@@ -365,15 +386,14 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
           })
           return
         }
-        playlistItems = formatPlaylistItemsSpec(pending.map((i) => i.playlistIndex))
         broadcastLog(
-          `${prefix}podcast: ${pending.length}/${rssItems.length} episode(s) not in archive (items ${playlistItems})\n`
+          `${prefix}podcast: ${pending.length}/${rssItems.length} episode(s) not in archive; download by enclosure URL\n`
         )
-        console.info(LOG, 'podcast sync: downloading pending rss items', {
+        console.info(LOG, 'podcast sync: downloading pending rss items by enclosure', {
           folderId,
-          playlistItems,
           pending: pending.length,
-          window: rssItems.length
+          window: rssItems.length,
+          titles: pending.map((i) => i.title.slice(0, 48))
         })
       } else {
         console.warn(LOG, 'podcast sync: rss window empty; falling back to yt-dlp playlist-items', {
@@ -384,9 +404,10 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
           `${prefix}podcast: could not parse RSS guids; falling back to items ${playlistItems}\n`
         )
       }
-      const args = [
-        '--playlist-items',
-        playlistItems,
+      // Beehiiv/Simplecast: yt-dlp's RSS playlist can drop the newest items, so
+      // `--playlist-items` on the feed URL downloads the wrong episodes — and we
+      // used to write the pending RSS guids into the archive anyway.
+      const commonArgs = [
         '--download-archive',
         tempArchive,
         '--ignore-errors',
@@ -398,28 +419,101 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
         '--write-thumbnail',
         '-f',
         'bestaudio/best',
-        '-o',
-        outTemplate,
         '--restrict-filenames',
-        ...ytDlpWindowsTempPathArgs(),
-        feedUrl
+        // Keep filesystem mtime as download time. GenericIE `--mtime` uses CDN
+        // Last-Modified (not RSS pubDate) and makes "newest file" matching miss.
+        '--no-mtime',
+        ...ytDlpWindowsTempPathArgs()
       ]
-      const { code } = await runYtDlp(args, dataRoot, { logPrefix: prefix })
-      if (code !== 0) {
-        broadcastLog(`${prefix}warning: exit code ${code} for podcast feed\n`)
-        console.warn(LOG, 'podcast sync feed non-zero exit', { folderId, code })
+      let code: number | null = 0
+      if (rssItems.length > 0) {
+        for (const item of pending) {
+          const episodeOut = ytdlpPodcastEpisodeOutputTemplate(folderId, item.title, item.guid)
+          broadcastLog(`${prefix}podcast: download ${item.title.slice(0, 72)}\n`)
+          console.info(LOG, 'podcast sync: enclosure download', {
+            folderId,
+            playlistIndex: item.playlistIndex,
+            titlePreview: item.title.slice(0, 64),
+            guidPreview: item.guid.slice(0, 64),
+            durationSec: item.durationSec,
+            publishedAtMs: item.publishedAtMs,
+            episodeOut
+          })
+          const result = await runYtDlp(
+            [
+              ...commonArgs,
+              ...ytDlpForceTitleArgs(item.title),
+              '-o',
+              episodeOut,
+              item.enclosureUrl
+            ],
+            dataRoot,
+            {
+              logPrefix: prefix
+            }
+          )
+          if (result.code !== 0) {
+            code = result.code
+            broadcastLog(`${prefix}warning: exit code ${result.code} for ${item.title.slice(0, 48)}\n`)
+            console.warn(LOG, 'podcast sync enclosure non-zero exit', {
+              folderId,
+              titlePreview: item.title.slice(0, 48),
+              code: result.code
+            })
+          }
+          // yt-dlp has exited, so the deterministic media path is final and safe to patch once.
+          const mediaAbs = await findPodcastMediaAbsForRssItem(outDir, item)
+          if (!mediaAbs) {
+            console.warn(LOG, 'podcast sync: downloaded enclosure has no matching media file', {
+              folderId,
+              titlePreview: item.title.slice(0, 48)
+            })
+            continue
+          }
+          const durationSec = item.durationSec ?? (await probeMediaDurationSec(mediaAbs))
+          await writeRssEpisodeIntoYtDlpInfoJson(mediaAbs, {
+            title: item.title,
+            publishedAtMs: item.publishedAtMs,
+            durationSec
+          })
+          console.info(LOG, 'podcast sync: RSS metadata applied', {
+            folderId,
+            file: mediaAbs.slice(-80),
+            durationSec,
+            publishedAtMs: item.publishedAtMs
+          })
+        }
       } else {
-        console.info(LOG, 'podcast sync feed yt-dlp done', { folderId, code })
+        const result = await runYtDlp(
+          [...commonArgs, '--playlist-items', playlistItems, '-o', outTemplate, feedUrl],
+          dataRoot,
+          { logPrefix: prefix }
+        )
+        code = result.code
+        if (code !== 0) {
+          broadcastLog(`${prefix}warning: exit code ${code} for podcast feed\n`)
+          console.warn(LOG, 'podcast sync feed non-zero exit', { folderId, code })
+        } else {
+          console.info(LOG, 'podcast sync feed yt-dlp done', { folderId, code })
+        }
       }
-      // Record stable RSS guids so a later library delete does not look like a new episode.
+      // Record GUIDs only for pending episodes that actually landed on disk (failed fetches stay retryable).
       if (pending.length > 0 && rssItems.length > 0) {
-        const guidLines = pending.map((item) => `generic ${item.guid}`)
-        const added = await appendArchiveRecords(tempArchive, guidLines)
-        broadcastLog(`${prefix}podcast: recorded ${added} RSS guid(s) in archive\n`)
+        const diskAfter = await loadPodcastFolderLookupKeys(outDir)
+        const landed = pending.filter((item) => {
+          const keys = podcastArchiveLookupKeys(item.guid, item.enclosureUrl)
+          return podcastItemAlreadyArchived(diskAfter, keys)
+        })
+        const guidLines = landed.map((item) => `generic ${item.guid}`)
+        const added = guidLines.length > 0 ? await appendArchiveRecords(tempArchive, guidLines) : 0
+        broadcastLog(
+          `${prefix}podcast: recorded ${added} RSS guid(s) for ${landed.length}/${pending.length} file(s) on disk\n`
+        )
         console.info(LOG, 'podcast sync: wrote rss guid archive lines', {
           folderId,
           added,
-          attempted: guidLines.length,
+          landed: landed.length,
+          attempted: pending.length,
           ytDlpCode: code
         })
       }

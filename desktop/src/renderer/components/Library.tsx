@@ -29,7 +29,7 @@ function relativeTime(ms: number): string {
 
 /** Format library-scan duration (seconds) as m:ss or h:mm:ss; null when unknown. */
 function formatLibraryDuration(seconds: number | null): string | null {
-  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return null
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return null
   const s = Math.floor(seconds)
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
@@ -193,7 +193,7 @@ function LibraryMediaRow({
         </span>
       ) : null}
       <div
-        className="flex flex-col items-end gap-0.5 shrink-0 max-w-[8.5rem] text-right leading-tight"
+        className="flex flex-col items-end gap-0.5 shrink-0 max-w-[10.5rem] text-right leading-tight"
         title={rowTime.title}
       >
         {rowTime.uploadDate != null ? (

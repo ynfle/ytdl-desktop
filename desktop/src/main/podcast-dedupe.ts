@@ -1,8 +1,10 @@
 import { basename, dirname, extname, join, parse } from 'path'
 import { promises as fs } from 'fs'
-import { podcastReadableBasename } from '../../shared/ytdl-output-template'
-import { LOG } from './constants'
+import { podcastIdFilenameTail, podcastReadableBasename } from '../../shared/ytdl-output-template'
+import { AUDIO_EXT, LOG } from './constants'
+import { podcastArchiveLookupKeys, podcastItemAlreadyArchived } from './download-archive'
 import { ytDlpInfoJsonSidecarPaths } from './media-embedded-title'
+import type { PodcastRssItem } from './podcast-rss'
 
 /** Stem is only a full episode UUID (legacy id-only download template). */
 const EPISODE_UUID_RE =
@@ -46,6 +48,141 @@ async function readEpisodeMetaBesideMedia(mediaAbsPath: string): Promise<Episode
 export async function readEpisodeIdBesideMedia(mediaAbsPath: string): Promise<string | null> {
   const meta = await readEpisodeMetaBesideMedia(mediaAbsPath)
   return meta?.id ?? null
+}
+
+/** yt-dlp identity fields used to match an on-disk episode to an RSS guid/enclosure. */
+const INFO_JSON_ID_FIELDS = ['id', 'display_id', 'webpage_url', 'url', 'original_url', 'guid'] as const
+
+/** Collect id/url strings from the sidecar beside a media file (title not required). */
+async function readEpisodeIdentityStrings(mediaAbsPath: string): Promise<string[]> {
+  const out: string[] = []
+  for (const p of ytDlpInfoJsonSidecarPaths(mediaAbsPath)) {
+    try {
+      const raw = await fs.readFile(p, 'utf8')
+      const j = JSON.parse(raw) as Record<string, unknown>
+      for (const field of INFO_JSON_ID_FIELDS) {
+        const v = j[field]
+        if (typeof v === 'string' && v.trim().length > 0) out.push(v.trim())
+      }
+      if (out.length > 0) return out
+    } catch {
+      /* missing or invalid sidecar */
+    }
+  }
+  return out
+}
+
+/**
+ * Lookup keys for every audio file in a podcast folder (filename stem + `.info.json` ids/urls).
+ * Used after yt-dlp so we only write RSS guids for episodes that actually landed on disk.
+ */
+export async function loadPodcastFolderLookupKeys(folderAbs: string): Promise<Set<string>> {
+  const keys = new Set<string>()
+  let names: string[]
+  try {
+    names = await fs.readdir(folderAbs)
+  } catch (e) {
+    console.info(LOG, 'podcast folder lookup: missing or unreadable', folderAbs, e)
+    return keys
+  }
+  let audioCount = 0
+  for (const name of names) {
+    const ext = extname(name).toLowerCase()
+    if (!AUDIO_EXT.has(ext)) continue
+    audioCount += 1
+    const abs = join(folderAbs, name)
+    const stem = name.slice(0, -ext.length)
+    for (const key of podcastArchiveLookupKeys(stem, stem)) keys.add(key)
+    for (const id of await readEpisodeIdentityStrings(abs)) {
+      for (const key of podcastArchiveLookupKeys(id, id)) keys.add(key)
+    }
+  }
+  console.info(LOG, 'podcast folder lookup keys', {
+    folderAbs,
+    audioCount,
+    keyCount: keys.size
+  })
+  return keys
+}
+
+/**
+ * Filename suffix from an RSS guid (`uuid` → 8 hex chars). Skip URL guids — their first
+ * 8 characters are `https://` and would false-match.
+ */
+function guidFilenameTailForMatch(guid: string): string | null {
+  const t = guid.trim()
+  if (!t || /^https?:\/\//i.test(t)) return null
+  const tail = podcastIdFilenameTail(t)
+  return tail.length > 0 ? tail.toLowerCase() : null
+}
+
+/** True when the on-disk stem was built as `TitleTrunc_${guidTail}`. */
+function stemHasGuidTail(stem: string, guidTail: string): boolean {
+  return stem.toLowerCase().endsWith(`_${guidTail}`)
+}
+
+/** Locate the on-disk audio file for one RSS item (expected stem, guid suffix, then sidecar ids). */
+export async function findPodcastMediaAbsForRssItem(
+  folderAbs: string,
+  item: PodcastRssItem
+): Promise<string | null> {
+  const want = new Set(podcastArchiveLookupKeys(item.guid, item.enclosureUrl))
+  const guidTail = guidFilenameTailForMatch(item.guid)
+  if (guidTail) want.add(guidTail)
+  const expectedStem = podcastReadableBasename(item.title, item.guid)
+  for (const ext of AUDIO_EXT) {
+    const candidate = join(folderAbs, `${expectedStem}${ext}`)
+    try {
+      await fs.access(candidate)
+      console.info(LOG, 'podcast rss media: matched expected stem', {
+        stem: expectedStem,
+        ext
+      })
+      return candidate
+    } catch {
+      /* try next ext / scan */
+    }
+  }
+  let names: string[]
+  try {
+    names = await fs.readdir(folderAbs)
+  } catch (e) {
+    console.warn(LOG, 'podcast rss media: readdir failed', folderAbs, e)
+    return null
+  }
+  for (const name of names) {
+    const ext = extname(name).toLowerCase()
+    if (!AUDIO_EXT.has(ext)) continue
+    const abs = join(folderAbs, name)
+    const stem = name.slice(0, -ext.length)
+    if (guidTail && stemHasGuidTail(stem, guidTail)) {
+      console.info(LOG, 'podcast rss media: matched guid filename tail', {
+        file: name,
+        guidTail,
+        guidPreview: item.guid.slice(0, 48)
+      })
+      return abs
+    }
+    // Sidecar ids/urls only — never add the RSS guid tail to the file key set
+    // (that made every audio file match the current item and overwrite one .info.json).
+    const keys = new Set<string>()
+    for (const id of await readEpisodeIdentityStrings(abs)) {
+      for (const key of podcastArchiveLookupKeys(id, id)) keys.add(key)
+    }
+    if (keys.size > 0 && podcastItemAlreadyArchived(keys, [...want])) {
+      console.info(LOG, 'podcast rss media: matched by id/enclosure', {
+        file: name,
+        guidPreview: item.guid.slice(0, 48)
+      })
+      return abs
+    }
+  }
+  console.info(LOG, 'podcast rss media: no match', {
+    folderAbs,
+    titlePreview: item.title.slice(0, 48),
+    guidPreview: item.guid.slice(0, 48)
+  })
+  return null
 }
 
 /**
