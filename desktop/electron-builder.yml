@@ -1,0 +1,52 @@
+appId: com.ytdl.desktop
+productName: YTDL Desktop
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - build/icon.png
+  - build/icon.ico
+  - package.json
+asarUnpack:
+  - out/preload/**
+  - build/**
+npmRebuild: false
+win:
+  icon: build/icon.ico
+  executableName: YTDL Desktop
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  include: installer/win/installer.nsh
+  artifactName: ${productName}-Setup-${version}.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+mac:
+  icon: build/icon.png
+  category: public.app-category.video
+  target:
+    - target: pkg
+      arch:
+        - arm64
+        - x64
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+pkg:
+  scripts: installer/mac/pkg-scripts
+  installLocation: /Applications
+  allowAnywhere: false
+  allowCurrentUserHome: true
+  allowRootDirectory: true
+  artifactName: ${productName}-Installer-${version}-${arch}.${ext}
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}

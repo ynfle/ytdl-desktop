@@ -21,7 +21,9 @@ Electron UI for your local **yt-dlp** workflow: browse downloaded media, run **c
 
 ## Data folder
 
-By default the app uses the **parent of this package** as the data directory (so when `desktop/` lives inside the repo, that parent holds `channels.txt`, `downloaded.txt`, and **`videos/`** for downloaded files). Use **Choose folder…** to override (stored in app userData). For a **packaged** build, set the data folder explicitly if the default inside the app bundle is not where you want media.
+By default the app uses the **parent of this package** as the data directory in development (`bun run dev` / `bun run start`), so when `desktop/` lives inside the repo, that parent holds `channels.txt`, `downloaded.txt`, and **`videos/`** for downloaded files.
+
+When running as a **packaged standalone app**, if no custom folder is configured in **Settings**, the app automatically detects an existing `~/ytdl-desktop` or `~/YTDL-Desktop` folder (or creates `~/ytdl-desktop`). You can override this at any time via **Settings → Choose folder…**. The Windows installer and macOS `.pkg` write that choice to `ytdl-config.json` in Electron userData (`%APPDATA%\YTDL Desktop` or `~/Library/Application Support/YTDL Desktop`).
 
 Podcast sync reads **`podcasts.txt`**, writes episode archive entries to **`podcast-downloaded.txt`**, and stores episodes under **`videos/podcasts/<feed-hash>/`** so the shell script and app share one layout.
 
@@ -39,6 +41,17 @@ If **`bun run start`** fails with **`Error: Electron uninstall`**, the Electron 
 
 ```bash
 bun run build && bun run start
+```
+
+### Standalone Packaged App
+
+To build a native standalone application (so you can launch from the Desktop, Start Menu, or macOS `/Applications` without running `bun run start`):
+
+```bash
+cd desktop
+bun run pack       # Unpacked standalone app in desktop/dist/
+bun run dist:win   # Windows NSIS installer with Data Directory wizard page (desktop/dist/YTDL Desktop-Setup-1.0.0.exe)
+bun run dist:mac   # macOS .pkg installer (with Data Directory prompt) + .dmg (desktop/dist/)
 ```
 
 ## Dev tips

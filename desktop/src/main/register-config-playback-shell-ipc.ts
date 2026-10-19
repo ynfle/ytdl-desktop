@@ -14,9 +14,11 @@ export function registerConfigIpc(): void {
   ipcMain.handle('config:setDataDir', async (_e, dir: string) => {
     try {
       const resolved = resolve(dir)
+      await fs.mkdir(resolved, { recursive: true })
       await fs.access(resolved)
       state.config.dataDir = resolved
       await saveConfig()
+      console.info(LOG, 'config:setDataDir saved and verified', resolved)
       return { ok: true as const }
     } catch (err) {
       console.error(LOG, 'setDataDir failed', err)

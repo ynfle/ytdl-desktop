@@ -5,7 +5,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    // Bundle `music-metadata` directly into `out/main/index.js` so packaged builds
+    // do not depend on shipping ESM transitive packages from `node_modules` inside `app.asar`.
+    plugins: [externalizeDepsPlugin({ exclude: ['music-metadata'] })]
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

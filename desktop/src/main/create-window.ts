@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
+import { getAppWindowIcon } from './app-icon'
 import { LOG } from './constants'
 import { state } from './app-state'
 import {
@@ -11,11 +12,13 @@ import {
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 export function createWindow(): void {
+  const windowIcon = getAppWindowIcon()
   state.mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    ...(windowIcon ? { icon: windowIcon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

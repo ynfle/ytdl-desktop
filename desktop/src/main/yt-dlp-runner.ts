@@ -1,4 +1,7 @@
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
+import { delimiter, join } from 'path'
 import { LOG } from './constants'
 import { broadcastLog } from './broadcast'
 
@@ -7,6 +10,79 @@ import { broadcastLog } from './broadcast'
  * `SSL_CERT_DIR` (corporate MITM CAs). Injected on every spawn below.
  */
 export const YT_DLP_NO_CERTIFI_ARGS = ['--compat-options', 'no-certifi'] as const
+
+/** Tracks whether we have logged the enriched child PATH at least once. */
+let loggedChildPathOnce = false
+
+/**
+ * Builds an environment dictionary for spawning `yt-dlp` (and its child tools like `ffmpeg` / `deno`).
+ * Standalone GUI launches (macOS Dock/Spotlight, Windows Start Menu) often omit shell-profile PATH
+ * directories; this appends existing common binary paths without duplicating entries.
+ */
+export function buildChildProcessEnv(): NodeJS.ProcessEnv {
+  const home = homedir()
+  const existingPath = process.env.PATH ?? process.env.Path ?? ''
+  const currentEntries = existingPath.split(delimiter).filter(Boolean)
+  const seenNormalized = new Set(
+    currentEntries.map((p) => (process.platform === 'win32' ? p.toLowerCase() : p))
+  )
+
+  // Candidate binary directories for macOS, Linux, and Windows GUI launches.
+  const extraCandidates: string[] =
+    process.platform === 'win32'
+      ? [
+          join(home, 'scoop', 'shims'),
+          join(home, '.local', 'bin'),
+          join(home, '.bun', 'bin'),
+          join(home, '.deno', 'bin'),
+          join(process.env.ProgramData ?? 'C:\\ProgramData', 'chocolatey', 'bin'),
+          ...(process.env.LOCALAPPDATA
+            ? [
+                join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links'),
+                join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Launcher')
+              ]
+            : [])
+        ]
+      : [
+          '/opt/homebrew/bin',
+          '/opt/homebrew/sbin',
+          '/usr/local/bin',
+          '/usr/local/sbin',
+          join(home, '.local', 'bin'),
+          join(home, '.bun', 'bin'),
+          join(home, '.deno', 'bin')
+        ]
+
+  const appended: string[] = []
+  for (const candidate of extraCandidates) {
+    const key = process.platform === 'win32' ? candidate.toLowerCase() : candidate
+    if (!seenNormalized.has(key) && existsSync(candidate)) {
+      seenNormalized.add(key)
+      currentEntries.push(candidate)
+      appended.push(candidate)
+    }
+  }
+
+  const finalPath = currentEntries.join(delimiter)
+  if (!loggedChildPathOnce) {
+    loggedChildPathOnce = true
+    console.info(LOG, 'buildChildProcessEnv: prepared child PATH', {
+      platform: process.platform,
+      appendedExtraDirs: appended,
+      totalPathEntries: currentEntries.length
+    })
+  }
+
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  // A plain object is case-sensitive. Drop every PATH spelling so Windows does not
+  // keep a stale `Path` beside a new `PATH`.
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'path') delete env[key]
+  }
+  env.PATH = finalPath
+  if (process.platform === 'win32') env.Path = finalPath
+  return env
+}
 
 /** True when argv already requests the `no-certifi` compat option (flag or `=value`). */
 function argsAlreadyHaveNoCertifi(args: readonly string[]): boolean {
@@ -62,7 +138,7 @@ export function runYtDlpCaptureStdout(args: string[], cwd: string): Promise<stri
     const chunks: Buffer[] = []
     const child = spawn('yt-dlp', argv, {
       cwd,
-      env: { ...process.env },
+      env: buildChildProcessEnv(),
       shell: false
     })
     child.stdout?.on('data', (buf: Buffer) => chunks.push(buf))
@@ -127,7 +203,7 @@ export function runYtDlp(
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn('yt-dlp', argv, {
       cwd,
-      env: { ...process.env },
+      env: buildChildProcessEnv(),
       shell: false
     })
     const prefixer = logPrefix ? createLinePrefixer(logPrefix, broadcastLog) : null

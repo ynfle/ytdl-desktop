@@ -1,4 +1,4 @@
-import { createReadStream } from 'fs'
+import { createReadStream, type ReadStream } from 'fs'
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import http from 'node:http'
@@ -19,6 +19,24 @@ import { mimeForFile } from './mime-utils'
 let mediaServer: http.Server | null = null
 let mediaPort = 0
 let mediaSecret = ''
+
+/**
+ * Pipes a file to the response and drops the read handle if the client disconnects.
+ * A finished response must not destroy the stream: that emits a spurious read error.
+ */
+function pipeFileToResponse(stream: ReadStream, res: ServerResponse, errorLabel: string): void {
+  res.on('close', () => {
+    if (!res.writableFinished) {
+      console.info(LOG, 'media client disconnected; releasing file stream', errorLabel)
+      stream.destroy()
+    }
+  })
+  stream.on('error', (err) => {
+    console.warn(LOG, errorLabel, err)
+    if (!res.writableEnded) res.destroy()
+  })
+  stream.pipe(res)
+}
 
 export function getMediaAuth(): { port: number; secret: string } | null {
   if (mediaPort <= 0 || !mediaSecret) return null
@@ -141,12 +159,7 @@ async function handleMediaHttp(req: IncomingMessage, res: ServerResponse): Promi
         return
       }
       res.writeHead(200, { 'Content-Length': String(st.size), 'Content-Type': mime })
-      createReadStream(full)
-        .on('error', (err) => {
-          console.warn(LOG, 'podcast cover stream error', err)
-          res.destroy()
-        })
-        .pipe(res)
+      pipeFileToResponse(createReadStream(full), res, 'podcast cover stream error')
       return
     }
 
@@ -185,12 +198,7 @@ async function handleMediaHttp(req: IncomingMessage, res: ServerResponse): Promi
         return
       }
       res.writeHead(200, { 'Content-Length': String(st.size), 'Content-Type': mime })
-      createReadStream(full)
-        .on('error', (err) => {
-          console.warn(LOG, 'channel logo stream error', err)
-          res.destroy()
-        })
-        .pipe(res)
+      pipeFileToResponse(createReadStream(full), res, 'channel logo stream error')
       return
     }
 
@@ -258,12 +266,7 @@ async function handleMediaHttp(req: IncomingMessage, res: ServerResponse): Promi
         'Content-Length': String(chunkLen),
         'Content-Type': mime
       })
-      createReadStream(full, { start, end })
-        .on('error', (err) => {
-          console.warn(LOG, 'media stream read error', err)
-          res.destroy()
-        })
-        .pipe(res)
+      pipeFileToResponse(createReadStream(full, { start, end }), res, 'media stream read error')
       return
     }
     res.writeHead(200, {
@@ -271,12 +274,7 @@ async function handleMediaHttp(req: IncomingMessage, res: ServerResponse): Promi
       'Content-Type': mime,
       'Accept-Ranges': 'bytes'
     })
-    createReadStream(full)
-      .on('error', (err) => {
-        console.warn(LOG, 'media stream read error', err)
-        res.destroy()
-      })
-      .pipe(res)
+    pipeFileToResponse(createReadStream(full), res, 'media stream read error')
   } catch (e) {
     console.error(LOG, 'media http handler error', e)
     if (!res.headersSent) {

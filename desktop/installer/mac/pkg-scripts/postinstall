@@ -1,0 +1,98 @@
+#!/bin/bash
+# macOS .pkg postinstall script for YTDL Desktop.
+# Prompts the installing user for their Data Directory (defaulting to ~/ytdl-desktop)
+# via a native Finder folder picker and writes ~/Library/Application Support/YTDL Desktop/ytdl-config.json
+# before the app is launched for the first time.
+
+set -u
+
+LOG_TAG="[ytdl-pkg-postinstall]"
+echo "$LOG_TAG starting postinstall configuration"
+
+# Identify the active GUI user (since Installer.app may execute postinstall as root)
+CONSOLE_USER="$(stat -f "%Su" /dev/console 2>/dev/null || echo "")"
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+  CONSOLE_USER="${USER:-}"
+fi
+
+USER_HOME=""
+if [ -n "$CONSOLE_USER" ]; then
+  USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+fi
+if [ -z "$USER_HOME" ] || [ ! -d "$USER_HOME" ]; then
+  USER_HOME="${HOME:-/Users/$CONSOLE_USER}"
+fi
+
+USER_UID="$(id -u "$CONSOLE_USER" 2>/dev/null || echo "")"
+echo "$LOG_TAG console_user=$CONSOLE_USER uid=$USER_UID home=$USER_HOME"
+
+LOWER_DIR="$USER_HOME/ytdl-desktop"
+UPPER_DIR="$USER_HOME/YTDL-Desktop"
+
+# Pick existing data folder if present, otherwise default to ~/ytdl-desktop
+if [ -f "$LOWER_DIR/channels.txt" ] || [ -d "$LOWER_DIR/videos" ]; then
+  DEFAULT_DIR="$LOWER_DIR"
+elif [ -f "$UPPER_DIR/channels.txt" ] || [ -d "$UPPER_DIR/videos" ]; then
+  DEFAULT_DIR="$UPPER_DIR"
+elif [ -d "$LOWER_DIR" ]; then
+  DEFAULT_DIR="$LOWER_DIR"
+elif [ -d "$UPPER_DIR" ]; then
+  DEFAULT_DIR="$UPPER_DIR"
+else
+  DEFAULT_DIR="$LOWER_DIR"
+fi
+
+# Ensure default directory exists before opening Finder folder picker at that location
+mkdir -p "$DEFAULT_DIR"
+if [ -n "$CONSOLE_USER" ]; then
+  chown "$CONSOLE_USER" "$DEFAULT_DIR" 2>/dev/null || true
+fi
+
+CHOSEN_DIR=""
+if [ -n "$CONSOLE_USER" ] && [ -n "$USER_UID" ]; then
+  echo "$LOG_TAG prompting user for Data Directory (default=$DEFAULT_DIR)"
+  CHOSEN_DIR="$(launchctl asuser "$USER_UID" sudo -u "$CONSOLE_USER" /usr/bin/osascript <<EOF 2>/dev/null
+try
+  tell application "System Events"
+    activate
+    set theFolder to choose folder with prompt "Choose the Data Directory for YTDL Desktop (stores channels.txt, podcasts.txt, and videos/):" default location (POSIX file "$DEFAULT_DIR")
+    return POSIX path of theFolder
+  end tell
+on error
+  return "$DEFAULT_DIR"
+end try
+EOF
+)"
+fi
+
+# Strip trailing slash (except root "/") and fallback to DEFAULT_DIR if empty
+CHOSEN_DIR="$(echo "${CHOSEN_DIR:-$DEFAULT_DIR}" | sed 's:/*$::')"
+if [ -z "$CHOSEN_DIR" ]; then
+  CHOSEN_DIR="$DEFAULT_DIR"
+fi
+
+echo "$LOG_TAG selected Data Directory: $CHOSEN_DIR"
+
+mkdir -p "$CHOSEN_DIR/videos"
+if [ -n "$CONSOLE_USER" ]; then
+  chown "$CONSOLE_USER" "$CHOSEN_DIR" "$CHOSEN_DIR/videos" 2>/dev/null || true
+fi
+
+CONFIG_DIR="$USER_HOME/Library/Application Support/YTDL Desktop"
+CONFIG_FILE="$CONFIG_DIR/ytdl-config.json"
+mkdir -p "$CONFIG_DIR"
+
+# Escape double quotes and backslashes for JSON safety
+ESCAPED_DIR="$(printf '%s' "$CHOSEN_DIR" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+cat > "$CONFIG_FILE" <<EOF
+{
+  "dataDir": "$ESCAPED_DIR"
+}
+EOF
+
+if [ -n "$CONSOLE_USER" ]; then
+  chown -R "$CONSOLE_USER" "$CONFIG_DIR" 2>/dev/null || true
+fi
+
+echo "$LOG_TAG wrote $CONFIG_FILE with dataDir=$CHOSEN_DIR"
+exit 0

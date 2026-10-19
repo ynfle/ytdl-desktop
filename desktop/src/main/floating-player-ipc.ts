@@ -14,6 +14,7 @@ import type {
   FloatingPlayerOpenPayload,
   FloatingPlayerSyncPayload
 } from '../../shared/ytdl-api'
+import { getAppWindowIcon } from './app-icon'
 import { state } from './app-state'
 import { LOG } from './constants'
 import { getMediaAuth, isAllowedFloatingMediaUrl } from './media-server'
@@ -327,11 +328,13 @@ async function handleOpenFloatingPlayer(
     const floatingHtmlPath = join(__dirname, '../renderer/floating-player.html')
     const geom = getFloatingPlayerWindowCreateOptions()
     const initialTitle = resolveFloatingPlayerWindowTitle(opts)
+    const windowIcon = getAppWindowIcon()
     state.floatingPlayerWindow = new BrowserWindow({
       ...geom,
       title: initialTitle,
       alwaysOnTop: true,
       autoHideMenuBar: true,
+      ...(windowIcon ? { icon: windowIcon } : {}),
       webPreferences: {
         preload: FLOATING_PLAYER_PRELOAD,
         sandbox: false,
@@ -412,7 +415,7 @@ async function handleOpenFloatingPlayer(
 function isFloatingControlPayload(raw: unknown): raw is FloatingPlayerControlPayload {
   if (!raw || typeof raw !== 'object') return false
   const a = (raw as { action?: string }).action
-  if (a === 'play' || a === 'pause' || a === 'togglePlay') return true
+  if (a === 'play' || a === 'pause' || a === 'togglePlay' || a === 'release') return true
   if (a === 'seek') {
     const t = (raw as { currentTime?: unknown }).currentTime
     return typeof t === 'number' && Number.isFinite(t)
