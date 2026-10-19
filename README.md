@@ -66,3 +66,5 @@ Prefer a **source-only** clone (e.g. `~/Projects/ytdl-desktop`) if your download
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The delete button in [`desktop/src/renderer/components/ui/delete-button.tsx`](desktop/src/renderer/components/ui/delete-button.tsx) is from [Rare UI](https://rareui.com). Copyright (c) 2026 Swami Malode. That file keeps its MIT + Commons Clause + Attribution notice and is not covered by the project MIT license.

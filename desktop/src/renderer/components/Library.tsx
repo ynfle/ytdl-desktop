@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { ArrowLeft, Play, Plus, Film, Trash2, Search, X } from 'lucide-react'
+import { ArrowLeft, Play, Plus, Film, Search, X } from 'lucide-react'
 import type { LibraryVideo } from '../../../shared/ytdl-api'
 import type { LibraryVideoGroup } from '../hooks/useLibrary'
 import {
@@ -10,6 +10,7 @@ import {
 } from '../hooks/useLibrary'
 import { MediaThumbSlot } from './MediaThumbSlot'
 import { ChannelAvatar } from './ChannelAvatar'
+import { RowDeleteButton } from './ui/row-delete-button'
 
 /** Human-friendly relative time label (used when no `.info.json` upload date). */
 function relativeTime(ms: number): string {
@@ -124,7 +125,7 @@ type Props = {
    * Prefer `.info.json` upload time via {@link libraryItemSortMs}, else file mtime.
    */
   onPlayFromOrdered: (orderedRels: string[], startRel: string) => void
-  /** Remove file from disk (caller confirms). */
+  /** Permanently delete one file. The row button confirms first. */
   onDelete: (relPath: string) => void
   isEmpty: boolean
 }
@@ -205,18 +206,13 @@ function LibraryMediaRow({
           {rowTime.downloadAge}
         </span>
       </div>
-      <button
-        type="button"
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation()
+      <RowDeleteButton
+        label={item.relPath}
+        onConfirm={() => {
+          console.info('[Library] delete confirmed', item.relPath)
           void onDelete(item.relPath)
         }}
-        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all shrink-0"
-        title="Delete from library"
-      >
-        <Trash2 size={12} />
-      </button>
+      />
     </li>
   )
 }

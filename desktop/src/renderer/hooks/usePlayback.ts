@@ -1168,6 +1168,30 @@ export function usePlayback(
   )
 
   /**
+   * Drops the current track's media source (inline player and floating PiP)
+   * so Chromium closes its HTTP Range connection before Windows unlinks the file.
+   */
+  const releaseMediaElementForDelete = useCallback(async (targetRel: string): Promise<void> => {
+    if (currentRelRef.current !== targetRel) {
+      console.info('[usePlayback] releaseMediaElementForDelete skipped; not current track', targetRel)
+      return
+    }
+    if (floatingPlayerActiveRef.current) {
+      console.info('[usePlayback] releaseMediaElementForDelete: unload floating PiP', targetRel)
+      const released = await window.ytdl.controlFloatingPlayer({ action: 'release' })
+      if (!released.ok) {
+        console.warn('[usePlayback] floating PiP release failed', released.error)
+      }
+    }
+    const v = videoRef.current
+    if (!v) return
+    console.log('[usePlayback] releaseMediaElementForDelete: unloading inline <video>', { targetRel })
+    v.pause()
+    v.removeAttribute('src')
+    v.load()
+  }, [])
+
+  /**
    * After the file for `deletedRel` was removed on disk: drop resume entry, prune queue/session,
    * and keep Electron floating PiP in sync when the deleted row was the active track.
    */
@@ -1822,6 +1846,7 @@ export function usePlayback(
     enterPip,
     stopPlayback,
     skipNext,
+    releaseMediaElementForDelete,
     handleLibraryFileDeleted,
     floatingSeek,
     floatingTogglePlay,

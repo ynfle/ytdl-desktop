@@ -90,6 +90,21 @@ export default function SettingsModal({ open, onClose, dataDir, onPickDir, onRes
                     ytdl desktop
                   </p>
                   <p className="text-[11px] text-text-muted leading-relaxed">
+                    Delete confirmation uses the{' '}
+                    <a
+                      href="https://rareui.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent underline hover:text-accent-hover"
+                      onClick={() => {
+                        console.info('[Settings] open Rare UI credit', 'https://rareui.com')
+                      }}
+                    >
+                      Rare UI
+                    </a>{' '}
+                    delete button. Copyright (c) 2026 Swami Malode.
+                  </p>
+                  <p className="text-[11px] text-text-muted leading-relaxed">
                     That folder is your data root: subscription lines live in{' '}
                     <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">channels.txt</code>,{' '}
                     <code className="font-mono text-text-secondary bg-surface-raised px-1 py-0.5 rounded">playlists.txt</code>, and{' '}

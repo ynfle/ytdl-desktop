@@ -434,6 +434,13 @@
           }
           if (cmd.action === 'togglePlay') {
             togglePlayPause()
+            return
+          }
+          if (cmd.action === 'release') {
+            console.log('[floating-player] release media src before file delete')
+            v.pause()
+            v.removeAttribute('src')
+            v.load()
           }
         })
 

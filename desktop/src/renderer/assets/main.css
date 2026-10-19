@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Always-dark shell: `dark:` follows `.dark` on <html>, not the OS theme. */
+@custom-variant dark (&:is(.dark *));
+
 /* ── Dark Cinema design tokens ── */
 @theme {
   --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;

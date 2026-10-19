@@ -178,46 +178,34 @@ export default function App(): React.ReactElement {
     applyLibraryScanResult(result)
   }, [lib.refreshLibrary, applyLibraryScanResult])
 
+  /** Channel row already confirmed via DeleteButton. */
   const handleRemoveChannel = useCallback(
     (identifier: string) => {
-      if (!window.confirm(`Remove "${identifier}" from channels.txt?`)) {
-        console.log('[App] remove channel cancelled', identifier)
-        return
-      }
       console.log('[App] remove channel confirmed', identifier)
       void channels.removeChannel(identifier)
     },
     [channels.removeChannel]
   )
 
+  /** Playlist row already confirmed via DeleteButton. */
   const handleRemovePlaylist = useCallback(
     (playlistUrl: string) => {
-      const preview =
-        playlistUrl.length > 120 ? `${playlistUrl.slice(0, 120)}…` : playlistUrl
-      if (!window.confirm(`Remove this playlist from playlists.txt?\n\n${preview}`)) {
-        console.log('[App] remove playlist cancelled', playlistUrl.slice(0, 64))
-        return
-      }
       console.log('[App] remove playlist confirmed', playlistUrl.slice(0, 64))
       void playlists.removePlaylist(playlistUrl)
     },
     [playlists.removePlaylist]
   )
 
+  /** Podcast row already confirmed via DeleteButton. */
   const handleRemovePodcast = useCallback(
     (feedUrl: string) => {
-      const preview = feedUrl.length > 120 ? `${feedUrl.slice(0, 120)}…` : feedUrl
-      if (!window.confirm(`Remove this podcast from podcasts.txt?\n\n${preview}`)) {
-        console.log('[App] remove podcast cancelled', feedUrl.slice(0, 64))
-        return
-      }
       console.log('[App] remove podcast confirmed', feedUrl.slice(0, 64))
       void podcasts.removePodcast(feedUrl)
     },
     [podcasts.removePodcast]
   )
 
-  /** Resolve drawer row label for confirm; falls back if index no longer matches (stale UI). */
+  /** Drawer row already confirmed via DeleteButton. */
   const handleRemovePlaylistIndex = useCallback(
     (playlistIndex: number) => {
       const all = [...playback.drawerUpNext, ...playback.drawerQueued]
@@ -225,10 +213,6 @@ export default function App(): React.ReactElement {
       const label = hit
         ? displayTitleForRelPath(lib.library, hit.relPath)
         : `queue item (index ${playlistIndex})`
-      if (!window.confirm(`Remove "${label}" from the queue?`)) {
-        console.log('[App] remove queue playlist index cancelled', playlistIndex)
-        return
-      }
       console.log('[App] remove queue playlist index confirmed', { playlistIndex, label })
       playback.removeFromPlaylistIndex(playlistIndex)
     },
@@ -240,37 +224,31 @@ export default function App(): React.ReactElement {
     ]
   )
 
+  /** Staging row already confirmed via DeleteButton. */
   const handleRemoveStagingIndex = useCallback(
     (index: number) => {
       const hit = playback.drawerStagingItems.find((r) => r.index === index)
       const label = hit
         ? displayTitleForRelPath(lib.library, hit.relPath)
         : `staging item ${index}`
-      if (!window.confirm(`Remove "${label}" from the staging queue?`)) {
-        console.log('[App] remove staging index cancelled', index)
-        return
-      }
       console.log('[App] remove staging index confirmed', { index, label })
       playback.removeFromStagingIndex(index)
     },
     [playback.drawerStagingItems, playback.removeFromStagingIndex, lib.library]
   )
 
-  /** Permanently remove one media file from disk and prune playback state. */
+  /** Permanently remove one media file from disk and prune playback state. Row button already confirmed. */
   const handleDeleteLibraryItem = useCallback(
     async (relPath: string) => {
       const label = displayTitleForRelPath(lib.library, relPath)
-      if (
-        !window.confirm(
-          `Permanently delete "${label}" from your library? This cannot be undone.`
-        )
-      ) {
-        return
-      }
-      console.log('[App] deleteLibraryMedia', relPath)
+      console.log('[App] deleteLibraryMedia', { relPath, label })
+      await playback.releaseMediaElementForDelete(relPath)
       const del = await window.ytdl.deleteLibraryMedia(relPath)
       if (!del.ok) {
-        sync.appendLog(`[ui] delete failed: ${del.error ?? 'unknown'}\n`)
+        const errMsg = del.error ?? 'unknown'
+        console.error('[App] deleteLibraryMedia failed', { relPath, error: errMsg })
+        sync.appendLog(`[ui] delete failed: ${errMsg}\n`)
+        window.alert(`Could not delete "${label}": ${errMsg}`)
         return
       }
       const remainingRels = new Set(
@@ -285,6 +263,7 @@ export default function App(): React.ReactElement {
       lib.library,
       lib.refreshLibrary,
       playback.handleLibraryFileDeleted,
+      playback.releaseMediaElementForDelete,
       sync
     ]
   )

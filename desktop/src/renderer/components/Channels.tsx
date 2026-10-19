@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ExternalLink, Loader2, Radio, Search, Trash2, UserPlus } from 'lucide-react'
+import { ExternalLink, Loader2, Radio, Search, UserPlus } from 'lucide-react'
 import type { ChannelInfoRow } from '../../../shared/ytdl-api'
 import { ChannelAvatar } from './ChannelAvatar'
+import { RowDeleteButton } from './ui/row-delete-button'
 import {
   SubscriptionMetadataToolbar,
   SubscriptionResolveProgressBar,
@@ -322,7 +323,7 @@ export default function ChannelsPage({
                     ) : null}
                   </td>
                   <td>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={() => onOpenUrl(row.videosUrl)}
                         className="p-1.5 rounded-md text-text-muted hover:text-accent hover:bg-accent-dim transition-all"
@@ -339,15 +340,14 @@ export default function ChannelsPage({
                           <ExternalLink size={12} />
                         </button>
                       ) : null}
-                      <button
-                        type="button"
+                      <RowDeleteButton
+                        label={row.identifier}
                         disabled={anyBusy}
-                        onClick={() => void onRemoveChannel(row.identifier)}
-                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all disabled:opacity-40"
-                        title="Remove from channels.txt"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                        onConfirm={() => {
+                          console.info('[Channels] remove confirmed', row.identifier)
+                          void onRemoveChannel(row.identifier)
+                        }}
+                      />
                     </div>
                   </td>
                 </motion.tr>

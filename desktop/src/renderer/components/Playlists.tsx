@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ExternalLink, ListVideo, Loader2, Search, Trash2, UserPlus } from 'lucide-react'
+import { ExternalLink, ListVideo, Loader2, Search, UserPlus } from 'lucide-react'
 import type { ChannelInfoRow } from '../../../shared/ytdl-api'
 import { ChannelAvatar } from './ChannelAvatar'
+import { RowDeleteButton } from './ui/row-delete-button'
 import {
   SubscriptionMetadataToolbar,
   SubscriptionResolveProgressBar,
@@ -325,7 +326,7 @@ export default function PlaylistsPage({
                     ) : null}
                   </td>
                   <td>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={() => onOpenUrl(row.videosUrl)}
                         className="p-1.5 rounded-md text-text-muted hover:text-accent hover:bg-accent-dim transition-all"
@@ -342,15 +343,14 @@ export default function PlaylistsPage({
                           <ExternalLink size={12} />
                         </button>
                       ) : null}
-                      <button
-                        type="button"
+                      <RowDeleteButton
+                        label={row.identifier}
                         disabled={anyBusy}
-                        onClick={() => void onRemovePlaylist(row.identifier)}
-                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all disabled:opacity-40"
-                        title="Remove from playlists.txt"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                        onConfirm={() => {
+                          console.info('[Playlists] remove confirmed', row.identifier)
+                          void onRemovePlaylist(row.identifier)
+                        }}
+                      />
                     </div>
                   </td>
                 </motion.tr>

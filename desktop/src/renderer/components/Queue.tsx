@@ -1,9 +1,10 @@
 import type { ReactElement } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { X, Play, Trash2, ListMusic } from 'lucide-react'
+import { X, Play, ListMusic } from 'lucide-react'
 import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 import { parseLibraryRelPath } from '../hooks/useLibrary'
 import { MediaThumbSlot } from './MediaThumbSlot'
+import { RowDeleteButton } from './ui/row-delete-button'
 
 type PlaylistRow = { relPath: string; playlistIndex: number }
 type StagingRow = { relPath: string; index: number }
@@ -79,17 +80,13 @@ function QueueRow({
       >
         {displayTitle}
       </span>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
+      <RowDeleteButton
+        label={relPath}
+        onConfirm={() => {
+          console.info('[Queue] remove confirmed', relPath)
           onRemove()
         }}
-        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all"
-        title="Remove"
-      >
-        <Trash2 size={11} />
-      </button>
+      />
     </motion.li>
   )
 }

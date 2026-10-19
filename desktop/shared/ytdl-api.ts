@@ -118,6 +118,8 @@ export type FloatingPlayerControlPayload =
   | { action: 'play' }
   | { action: 'pause' }
   | { action: 'togglePlay' }
+  /** Drop the PiP `<video>` src so Windows can unlink the file. */
+  | { action: 'release' }
 
 /** Preload API exposed as `window.ytdl`. */
 export type YtdlApi = {

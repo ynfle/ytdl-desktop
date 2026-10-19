@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ExternalLink, Loader2, Mic2, Search, Trash2 } from 'lucide-react'
+import { ExternalLink, Loader2, Mic2, Search } from 'lucide-react'
 import type { ApplePodcastSearchResult, PodcastInfoRow } from '../../../shared/ytdl-api'
 import { ChannelAvatar } from './ChannelAvatar'
+import { RowDeleteButton } from './ui/row-delete-button'
 import {
   SubscriptionMetadataToolbar,
   SubscriptionResolveProgressBar,
@@ -384,7 +385,7 @@ export default function PodcastsPage({
                     ) : null}
                   </td>
                   <td>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => onOpenUrl(row.feedUrl)}
@@ -393,15 +394,14 @@ export default function PodcastsPage({
                       >
                         <ExternalLink size={12} />
                       </button>
-                      <button
-                        type="button"
+                      <RowDeleteButton
+                        label={row.feedUrl}
                         disabled={busy || podcastsBusy}
-                        onClick={() => void onRemovePodcast(row.feedUrl)}
-                        className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger-dim transition-all disabled:opacity-40"
-                        title="Remove subscription"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                        onConfirm={() => {
+                          console.info('[Podcasts] remove confirmed', row.feedUrl)
+                          void onRemovePodcast(row.feedUrl)
+                        }}
+                      />
                     </div>
                   </td>
                 </motion.tr>

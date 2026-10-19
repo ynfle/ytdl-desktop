@@ -17,6 +17,32 @@ function embeddedTitleCacheKey(relPath: string): string {
   return `${EMBEDDED_TITLE_CACHE_SCHEMA}:${relPath}`
 }
 
+/**
+ * Unlinks a file on disk, retrying briefly if Windows holds a transient file lock
+ * (`EBUSY`, `EPERM`, or `EACCES`) while a media stream or scanner releases its handle.
+ */
+async function unlinkWithWindowsRetry(filePath: string): Promise<void> {
+  const maxAttempts = 6
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fs.unlink(filePath)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code
+      const isTransientLock = code === 'EBUSY' || code === 'EPERM' || code === 'EACCES'
+      if (!isTransientLock || attempt === maxAttempts) {
+        throw err
+      }
+      console.warn(LOG, 'library:deleteMedia transient lock, retrying unlink', {
+        filePath,
+        code,
+        attempt
+      })
+      await new Promise((r) => setTimeout(r, 80 * attempt))
+    }
+  }
+}
+
 /** `library:scan` — keep registration order: called before channels IPC in bootstrap. */
 export function registerLibraryScanIpc(): void {
   ipcMain.handle('library:scan', async () => {
@@ -148,6 +174,12 @@ export function registerLibraryDeleteMediaIpc(): void {
         console.warn(LOG, 'library:deleteMedia not a file', full)
         return { ok: false as const, error: 'not a file' }
       }
+      let realRoot = root
+      try {
+        realRoot = await fs.realpath(root)
+      } catch {
+        // Keep `root` if `realpath` fails.
+      }
       let realFull: string
       try {
         realFull = await fs.realpath(full)
@@ -155,14 +187,18 @@ export function registerLibraryDeleteMediaIpc(): void {
         console.warn(LOG, 'library:deleteMedia realpath failed', full, e)
         return { ok: false as const, error: String(e) }
       }
-      if (!isPathInsideRoot(root, realFull)) {
-        console.warn(LOG, 'library:deleteMedia symlink escapes data root', full)
+      if (!isPathInsideRoot(realRoot, realFull)) {
+        console.warn(LOG, 'library:deleteMedia symlink escapes data root', {
+          realRoot,
+          realFull,
+          full
+        })
         return { ok: false as const, error: 'path not allowed' }
       }
-      await fs.unlink(realFull)
+      await unlinkWithWindowsRetry(realFull)
       embeddedTitleCache.delete(embeddedTitleCacheKey(relPath))
-      await unlinkSidecarThumbnailsBesideMedia(root, realFull)
-      await unlinkYtDlpInfoJsonSidecarsBesideMedia(root, realFull)
+      await unlinkSidecarThumbnailsBesideMedia(realRoot, realFull)
+      await unlinkYtDlpInfoJsonSidecarsBesideMedia(realRoot, realFull)
       console.info(LOG, 'library:deleteMedia ok', relPath)
       return { ok: true as const }
     } catch (e) {

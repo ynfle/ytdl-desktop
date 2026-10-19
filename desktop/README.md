@@ -74,3 +74,9 @@ PowerShell:
 macOS/Linux:
 
 `env -u ELECTRON_RUN_AS_NODE ./node_modules/.bin/electron .`
+
+## License
+
+This app is MIT. See the repo [LICENSE](../LICENSE).
+
+The delete button in `src/renderer/components/ui/delete-button.tsx` is from [Rare UI](https://rareui.com). Copyright (c) 2026 Swami Malode. It stays under the MIT + Commons Clause + Attribution license copied at the top of that file. It is used inside this app and is not relicensed or redistributed as a component kit.
