@@ -45,8 +45,12 @@
     !define MUI_DIRECTORYPAGE_VARIABLE $ytdlDataDir
     !insertmacro MUI_PAGE_DIRECTORY
 
-    # The data-dir pre-hook must not leak onto MUI_PAGE_INSTFILES (it Aborts on update).
-    !undef MUI_PAGE_CUSTOMFUNCTION_PRE
+    # MUI_PAGE_DIRECTORY consumes and !undefs MUI_PAGE_CUSTOMFUNCTION_PRE.
+    # A bare !undef warns (6155), and makensis treats warnings as errors.
+    # Restore instFilesPre so the install page still appends the app folder to $INSTDIR.
+    !ifdef MUI_PAGE_CUSTOMFUNCTION_PRE
+      !undef MUI_PAGE_CUSTOMFUNCTION_PRE
+    !endif
     !ifdef allowToChangeInstallationDirectory
       !define MUI_PAGE_CUSTOMFUNCTION_PRE instFilesPre
     !endif
