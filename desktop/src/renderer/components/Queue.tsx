@@ -1,10 +1,12 @@
-import type { ReactElement } from 'react'
+import { useEffect, useRef } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { X, Play, ListMusic } from 'lucide-react'
 import { humanizeRestrictFilename } from '../../../shared/humanize-restrict-filename'
 import { parseLibraryRelPath } from '../hooks/useLibrary'
 import { MediaThumbSlot } from './MediaThumbSlot'
 import { RowDeleteButton } from './ui/row-delete-button'
+import { iconCloseButtonClass } from './subscription-page-ui'
 
 type PlaylistRow = { relPath: string; playlistIndex: number }
 type StagingRow = { relPath: string; index: number }
@@ -30,6 +32,7 @@ type Props = {
   thumbByRel: ThumbSlotByRel
 }
 
+/** One drawer row: double-click or Enter plays from here; trailing control removes (confirmed). */
 function QueueRow({
   relPath,
   rank,
@@ -49,6 +52,18 @@ function QueueRow({
   onDoubleClick: () => void
   onRemove: () => void
 }): ReactElement {
+  /** Enter on the focused row plays it (same as double-click). */
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLLIElement>): void => {
+    // Ignore keys from the nested delete control.
+    if (e.target !== e.currentTarget) return
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      console.info('[Queue] row Enter → play', relPath)
+      onDoubleClick()
+    }
+  }
+
   return (
     <motion.li
       layout
@@ -57,9 +72,16 @@ function QueueRow({
       exit={{ opacity: 0, x: 16 }}
       className={`
         group flex items-center gap-2.5 px-4 py-2.5 border-b border-border cursor-pointer transition-all duration-120
-        ${isActive ? 'bg-accent-dim/30 now-playing-glow' : 'hover:bg-surface-raised/60'}
+        outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60
+        ${isActive ? 'bg-accent-dim/30 now-playing-glow' : 'hover:bg-surface-raised/60 focus-visible:bg-surface-raised/60'}
       `}
+      tabIndex={0}
+      role="button"
+      aria-label={isActive ? `${displayTitle} (now playing)` : `${rank}. ${displayTitle}`}
+      aria-current={isActive ? 'true' : undefined}
+      title={`${displayTitle}\nDouble-click or Enter to play from here`}
       onDoubleClick={onDoubleClick}
+      onKeyDown={handleKeyDown}
     >
       <MediaThumbSlot
         thumbRelPath={thumbRelPath}
@@ -75,8 +97,7 @@ function QueueRow({
         )}
       </div>
       <span
-        className={`flex-1 text-[11px] truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text'}`}
-        title={displayTitle}
+        className={`flex-1 min-w-0 text-[11px] truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text group-focus-visible:text-text'}`}
       >
         {displayTitle}
       </span>
@@ -96,7 +117,7 @@ function SectionLabel({ label, extra }: { label: string; extra?: string }): Reac
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-raised/40 backdrop-blur-sm">
       <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-text-muted">{label}</span>
-      {extra && <span className="text-[9px] text-text-muted/60 ml-auto">{extra}</span>}
+      {extra && <span className="text-[9px] text-text-muted ml-auto tabular-nums">{extra}</span>}
     </div>
   )
 }
@@ -118,6 +139,40 @@ export default function QueueDrawer({
 }: Props): ReactElement {
   const totalCount =
     drawerMode === 'staging' ? stagingItems.length : upNext.length + queued.length
+  /** Header close button; receives focus when the drawer opens. */
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  /** Latest `onClose` so the Escape listener does not re-bind on every parent render. */
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  // While open: Escape closes; focus moves to the close button and returns to the opener on close.
+  useEffect(() => {
+    if (!open) return
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const raf = requestAnimationFrame(() => {
+      closeButtonRef.current?.focus({ preventScroll: true })
+      console.info('[Queue] drawer opened; focus → close button')
+    })
+    const onKeyDown = (e: KeyboardEvent): void => {
+      // Nested controls (e.g. delete confirm) stop propagation when they consume Escape.
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      console.info('[Queue] Escape → close drawer')
+      onCloseRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('keydown', onKeyDown)
+      // Return focus to whatever opened the drawer (e.g. the queue toggle) if it is still mounted.
+      if (opener && opener.isConnected) {
+        opener.focus({ preventScroll: true })
+        console.info('[Queue] drawer closed; focus restored to opener')
+      }
+    }
+  }, [open])
 
   return (
     <AnimatePresence>
@@ -131,10 +186,14 @@ export default function QueueDrawer({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
+            aria-hidden
           />
 
           {/* Drawer panel */}
           <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Play queue"
             className="fixed top-0 right-0 bottom-0 w-80 glass-panel border-l border-border z-50 flex flex-col"
             style={{ boxShadow: '-8px 0 40px rgba(0, 0, 0, 0.4)' }}
             initial={{ x: '100%' }}
@@ -146,7 +205,7 @@ export default function QueueDrawer({
             <div className="flex items-center justify-between px-4 h-14 border-b border-border shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-6 h-6 rounded-md bg-accent-dim flex items-center justify-center">
-                  <ListMusic size={13} className="text-accent" />
+                  <ListMusic size={13} className="text-accent" aria-hidden />
                 </div>
                 <h2 className="text-sm font-semibold">Play queue</h2>
                 {totalCount > 0 && (
@@ -154,9 +213,12 @@ export default function QueueDrawer({
                 )}
               </div>
               <button
+                ref={closeButtonRef}
                 type="button"
                 onClick={onClose}
-                className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-colors"
+                className={`${iconCloseButtonClass} outline-none focus-visible:ring-2 focus-visible:ring-accent/60`}
+                aria-label="Close play queue"
+                title="Close (Esc)"
               >
                 <X size={14} />
               </button>
@@ -166,8 +228,9 @@ export default function QueueDrawer({
             <div className="flex-1 overflow-y-auto">
               {totalCount === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-text-muted px-6">
-                  <div className="w-14 h-14 rounded-xl bg-surface-overlay/60 flex items-center justify-center">
-                    <ListMusic size={24} strokeWidth={1.2} className="text-text-muted/40" />
+                  {/* Inline size: `.empty-state-icon` is unlayered CSS, so w-/h- utilities would not override it. */}
+                  <div className="empty-state-icon" style={{ width: '3.5rem', height: '3.5rem' }}>
+                    <ListMusic size={24} strokeWidth={1.2} className="text-accent/50" aria-hidden />
                   </div>
                   <div className="text-center space-y-1">
                     <p className="text-xs font-medium text-text-secondary">Nothing lined up</p>

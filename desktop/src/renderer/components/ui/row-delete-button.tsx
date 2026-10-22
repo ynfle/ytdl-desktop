@@ -26,6 +26,13 @@ export function RowDeleteButton({
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
+      // Rows map Enter / Space / q to play or queue; keep the control's activation keys local.
+      // Escape is left to bubble (DeleteButton consumes it only while its panel is open).
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'q' || event.key === 'Q') {
+          event.stopPropagation()
+        }
+      }}
       inert={disabled ? true : undefined}
     >
       <DeleteButton

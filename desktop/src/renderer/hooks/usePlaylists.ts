@@ -18,6 +18,8 @@ export function usePlaylists(appendLog: (chunk: string) => void, dataDir: string
   const [playlistRows, setPlaylistRows] = useState<ChannelInfoRow[]>([])
   const [playlistsBusy, setPlaylistsBusy] = useState(false)
   const [playlistsProgress, setPlaylistsProgress] = useState<string | null>(null)
+  /** True once the first cache hydrate settles (success or failure); gates the empty state so it does not flash. */
+  const [listLoaded, setListLoaded] = useState(false)
 
   const [addPreview, setAddPreview] = useState<{ playlistUrl: string; row: ChannelInfoRow } | null>(null)
   const [addPreviewLoading, setAddPreviewLoading] = useState(false)
@@ -36,8 +38,17 @@ export function usePlaylists(appendLog: (chunk: string) => void, dataDir: string
     console.log(`[usePlaylists] loaded ${r.rows?.length ?? 0} playlist rows`)
   }, [appendLog])
 
+  /** Load playlists on mount and when dataDir changes. */
   useEffect(() => {
     void loadPlaylistRows()
+      .catch((e: unknown) => {
+        // Invoke threw (e.g. missing handler); still mark loaded so the empty state can render.
+        console.error('[usePlaylists] initial hydrate threw', e)
+      })
+      .finally(() => {
+        setListLoaded(true)
+        console.info('[usePlaylists] initial list load settled; listLoaded=true')
+      })
   }, [dataDir, loadPlaylistRows])
 
   useEffect(() => {
@@ -193,6 +204,7 @@ export function usePlaylists(appendLog: (chunk: string) => void, dataDir: string
     playlistRows,
     playlistsBusy,
     playlistsProgress,
+    listLoaded,
     loadPlaylistRows,
     refreshPlaylistMeta,
     addPreview,

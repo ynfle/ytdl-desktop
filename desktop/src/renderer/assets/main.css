@@ -301,16 +301,39 @@ input[type='range']::-webkit-slider-thumb:active {
   opacity: 1;
 }
 
-/* ── Section header pill ── */
-.section-pill {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-raised);
-  color: var(--color-text-muted);
+/* Components layer: Tailwind utilities (text-*, w-*, ring-*) can override these per use. */
+@layer components {
+  /* ── Section header pill ── */
+  .section-pill {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
+  }
+
+  /* ── Accent gradient fill (primary CTAs, play button, brand tile, queue badge) ── */
+  .bg-accent-gradient {
+    background: linear-gradient(135deg, var(--color-accent) 0%, #d4893a 100%);
+    /* Soft amber lift + top highlight so the fill reads as raised. */
+    box-shadow: 0 2px 8px rgba(232, 168, 73, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  /* ── Empty-state icon tile (Library, Channels, Playlists, Podcasts, Queue) ── */
+  .empty-state-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
+    border-radius: var(--radius-lg);
+    /* Faint amber wash so empty states share one look across pages. */
+    background: linear-gradient(135deg, rgba(232, 168, 73, 0.08) 0%, rgba(232, 168, 73, 0.02) 100%);
+    border: 1px solid rgba(232, 168, 73, 0.1);
+  }
 }
 
 /* ── Pulse animation for live indicators ── */

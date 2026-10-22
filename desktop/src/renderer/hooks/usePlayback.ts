@@ -149,6 +149,23 @@ function isKeyboardTargetEditable(target: EventTarget | null): boolean {
 }
 
 /**
+ * True when a button-like control was focused via keyboard (`:focus-visible`), so bare Space
+ * should activate it instead of toggling playback. Mouse-focused controls keep Space = play/pause.
+ */
+function isKeyboardFocusedControl(target: EventTarget | null): boolean {
+  if (target == null || !(target instanceof HTMLElement)) return false
+  // Range inputs (seek bar) keep Space = play/pause even when keyboard-focused.
+  if (target instanceof HTMLInputElement && target.type === 'range') return false
+  const control = target.closest('button, [role="button"], a[href], summary')
+  if (!control || !target.matches(':focus-visible')) return false
+  console.log('[usePlayback] keyboard Space left to focused control', {
+    tag: control.tagName,
+    label: control.getAttribute('aria-label')
+  })
+  return true
+}
+
+/**
  * Filter autoplay list to paths still on disk; if the track at savedCursor is gone,
  * skip forward then fall back to first valid entry.
  */
@@ -1676,6 +1693,7 @@ export function usePlayback(
         (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar')
       if (isSpace) {
         if (e.repeat) return
+        if (isKeyboardFocusedControl(e.target)) return
         e.preventDefault()
         if (floatingPlayerActiveRef.current) {
           console.log('[usePlayback] keyboard Space → floating PiP togglePlay')

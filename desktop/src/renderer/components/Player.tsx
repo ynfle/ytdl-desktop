@@ -252,6 +252,10 @@ export type PlayerProps = {
   currentDisplayTitle: string | null
 }
 
+/** Shared look for the small circular transport icon buttons (skip, stop, PiP, queue) incl. keyboard focus ring. */
+const TRANSPORT_ICON_BUTTON_CLASS =
+  'flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text hover:bg-surface-raised/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg'
+
 /** Format seconds to mm:ss or hh:mm:ss. */
 function fmtTime(s: number): string {
   if (!Number.isFinite(s) || s < 0) return '0:00'
@@ -402,6 +406,14 @@ function usePlayerChrome({
   const barTime = floatingSync ? floatingSync.currentTime : currentTime
   const barPaused = floatingSync ? !floatingSync.playing : isPaused
   const pct = barDuration > 0 ? (barTime / barDuration) * 100 : 0
+  /** Nothing to scrub until a track is loaded with a known duration (floating PiP reports via `floatingSync`). */
+  const seekDisabled = !currentRel || !(barDuration > 0)
+  /** Screen-reader text for the seek slider, e.g. "1:05 of 12:30". */
+  const seekValueText = `${fmtTime(barTime)} of ${fmtTime(barDuration)}`
+
+  useEffect(() => {
+    console.info('[Player] seek slider enabled state', { seekDisabled, currentRel, barDuration })
+  }, [seekDisabled, currentRel, barDuration])
 
   /** Keep artwork visible until we know the media has a decoded video plane (audio posters drop in Chromium). */
   const showArtworkLayer = Boolean(showInlineVideo && posterUrl && hasVideoFrame !== true)
@@ -467,30 +479,33 @@ function usePlayerChrome({
 
       {/* Playback controls */}
       <div className="flex shrink-0 items-center gap-1.5">
+        {/* Outline (not ring) focus: `.bg-accent-gradient` box-shadow is unlayered and would mask ring utilities. */}
         <motion.button
+          type="button"
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.94 }}
           onClick={togglePlayPause}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-bg transition-shadow"
-          style={{
-            background: 'linear-gradient(135deg, #e8a849 0%, #d4893a 100%)',
-            boxShadow: '0 2px 12px rgba(232, 168, 73, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
-          }}
+          className="bg-accent-gradient flex h-10 w-10 items-center justify-center rounded-full text-bg transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           title={barPaused ? 'Play (Space)' : 'Pause (Space)'}
+          aria-label={barPaused ? 'Play' : 'Pause'}
         >
           {barPaused ? <Play size={16} className="ml-0.5" /> : <Pause size={16} />}
         </motion.button>
         <button
+          type="button"
           onClick={onSkipNext}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text hover:bg-surface-raised/50"
+          className={TRANSPORT_ICON_BUTTON_CLASS}
           title="Next track (media key Next, or ⌘/Ctrl+Shift+→)"
+          aria-label="Skip to next"
         >
           <SkipForward size={15} />
         </button>
         <button
+          type="button"
           onClick={onStop}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text hover:bg-surface-raised/50"
+          className={TRANSPORT_ICON_BUTTON_CLASS}
           title="Stop"
+          aria-label="Stop"
         >
           <Square size={13} />
         </button>
@@ -498,7 +513,7 @@ function usePlayerChrome({
 
       {/* Track info + scrubber */}
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
-        <span className="truncate font-mono text-[11px] leading-tight text-text-secondary">
+        <span className="truncate text-[11px] leading-tight text-text-secondary" title={trackLabel ?? undefined}>
           {trackLabel ?? <span className="text-text-muted">Nothing playing</span>}
         </span>
         <div className="flex items-center gap-2.5">
@@ -512,6 +527,9 @@ function usePlayerChrome({
             step={0.1}
             value={barTime}
             onChange={onScrub}
+            disabled={seekDisabled}
+            aria-label="Playback position"
+            aria-valuetext={seekValueText}
             className="h-1 flex-1 disabled:cursor-not-allowed disabled:opacity-40"
             style={{
               background: `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-border-bright) ${pct}%)`
@@ -526,25 +544,26 @@ function usePlayerChrome({
       {/* Right controls */}
       <div className="flex shrink-0 items-center gap-1">
         <button
+          type="button"
           onClick={onPip}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text hover:bg-surface-raised/50"
+          className={TRANSPORT_ICON_BUTTON_CLASS}
           title="Picture in Picture"
+          aria-label="Picture in Picture"
         >
           <PictureInPicture2 size={15} />
         </button>
         <button
+          type="button"
           onClick={onToggleQueue}
-          className="relative flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text hover:bg-surface-raised/50"
+          className={`relative ${TRANSPORT_ICON_BUTTON_CLASS}`}
           title="Queue"
+          aria-label={queueCount > 0 ? `Open play queue (${queueCount} upcoming)` : 'Open play queue'}
         >
           <ListMusic size={15} />
           {queueCount > 0 && (
             <span
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold text-bg"
-              style={{
-                background: 'linear-gradient(135deg, #e8a849 0%, #d4893a 100%)',
-                boxShadow: '0 1px 4px rgba(232, 168, 73, 0.3)'
-              }}
+              aria-hidden="true"
+              className="bg-accent-gradient absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold text-bg"
             >
               {queueCount}
             </span>

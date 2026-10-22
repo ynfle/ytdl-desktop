@@ -18,6 +18,8 @@ export function usePodcasts(appendLog: (chunk: string) => void, dataDir: string)
   const [podcastRows, setPodcastRows] = useState<PodcastInfoRow[]>([])
   const [podcastsBusy, setPodcastsBusy] = useState(false)
   const [podcastsProgress, setPodcastsProgress] = useState<string | null>(null)
+  /** True once the first cache hydrate settles (success or failure); gates the empty state so it does not flash. */
+  const [listLoaded, setListLoaded] = useState(false)
 
   const [searchResults, setSearchResults] = useState<ApplePodcastSearchResult[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -40,8 +42,17 @@ export function usePodcasts(appendLog: (chunk: string) => void, dataDir: string)
     console.log(`[usePodcasts] loaded ${r.rows?.length ?? 0} podcast rows`)
   }, [appendLog])
 
+  /** Load podcasts on mount and when dataDir changes. */
   useEffect(() => {
     void loadPodcastRows()
+      .catch((e: unknown) => {
+        // Invoke threw (e.g. missing handler); still mark loaded so the empty state can render.
+        console.error('[usePodcasts] initial hydrate threw', e)
+      })
+      .finally(() => {
+        setListLoaded(true)
+        console.info('[usePodcasts] initial list load settled; listLoaded=true')
+      })
   }, [dataDir, loadPodcastRows])
 
   useEffect(() => {
@@ -217,6 +228,7 @@ export function usePodcasts(appendLog: (chunk: string) => void, dataDir: string)
     podcastRows,
     podcastsBusy,
     podcastsProgress,
+    listLoaded,
     loadPodcastRows,
     refreshPodcastMeta,
     searchResults,

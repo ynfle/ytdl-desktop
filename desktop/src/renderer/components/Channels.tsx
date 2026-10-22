@@ -5,10 +5,17 @@ import type { ChannelInfoRow } from '../../../shared/ytdl-api'
 import { ChannelAvatar } from './ChannelAvatar'
 import { RowDeleteButton } from './ui/row-delete-button'
 import {
+  SubscriptionListLoading,
   SubscriptionMetadataToolbar,
   SubscriptionResolveProgressBar,
+  SubscriptionRowStatus,
+  subPageAddCardClass,
+  subPageCellTruncateClass,
   subPageLookUpButtonClass,
   subPageLookUpInputClass,
+  subPagePrimaryButtonClass,
+  subPageRowIconButtonClass,
+  subPageSecondaryButtonClass,
   subscriptionToolbarFetchSpinner,
   useSubscriptionPageLocks
 } from './subscription-page-ui'
@@ -48,7 +55,7 @@ function AddChannelBar({
     interactionLocked || addPreviewLoading || addConfirmBusy || !rawInput.trim()
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised/60 p-4 space-y-3">
+    <div className={subPageAddCardClass}>
       <p className="text-[11px] text-text-muted leading-relaxed">
         Add a channel: paste a full YouTube or YouTube Music channel URL, or type a slug (
         <span className="font-mono text-text-secondary">@handle</span>,{' '}
@@ -128,11 +135,7 @@ function AddChannelBar({
               type="button"
               onClick={() => void onConfirmAdd()}
               disabled={addConfirmBusy}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg text-bg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              style={{
-                background: 'linear-gradient(135deg, #e8a849 0%, #d4893a 100%)',
-                boxShadow: '0 2px 8px rgba(232, 168, 73, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
-              }}
+              className={subPagePrimaryButtonClass}
             >
               {addConfirmBusy ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />}
               Add channel
@@ -141,7 +144,7 @@ function AddChannelBar({
               type="button"
               onClick={onCancelPreview}
               disabled={addConfirmBusy}
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-lg border border-border text-text-secondary hover:text-text hover:border-border-bright disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className={subPageSecondaryButtonClass}
             >
               Back
             </button>
@@ -175,6 +178,11 @@ type Props = {
   onConfirmAddChannel: () => Promise<boolean>
   /** Remove one line from channels.txt (same identifier as the row). */
   onRemoveChannel: (identifier: string) => void
+  /**
+   * False until the first cache hydrate settles (`useChannels().listLoaded`); shows a loading
+   * placeholder instead of the empty state. Defaults to true so callers that omit it keep old behavior.
+   */
+  listLoaded?: boolean
 }
 
 /** Channels page: table of channels.txt entries with resolve controls and progress. */
@@ -198,7 +206,8 @@ export default function ChannelsPage({
   onLookUpChannel,
   onCancelAddPreview,
   onConfirmAddChannel,
-  onRemoveChannel
+  onRemoveChannel,
+  listLoaded = true
 }: Props) {
   const [addRawInput, setAddRawInput] = useState('')
 
@@ -239,9 +248,12 @@ export default function ChannelsPage({
       <div className="px-6 py-4 border-b border-border shrink-0 space-y-3">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold tracking-tight">Channels</h1>
-          <span className="section-pill">
-            {rows.length} entr{rows.length === 1 ? 'y' : 'ies'}
-          </span>
+          {/* Hide the count until hydrate settles so it never reads "0 entries" prematurely. */}
+          {listLoaded ? (
+            <span className="section-pill">
+              {rows.length} entr{rows.length === 1 ? 'y' : 'ies'}
+            </span>
+          ) : null}
         </div>
 
         {rows.length > 0 ? addBar : null}
@@ -266,16 +278,13 @@ export default function ChannelsPage({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {rows.length === 0 ? (
+        {/* Hydrate still in flight: avoid flashing "No lines in channels.txt yet". */}
+        {rows.length === 0 && !listLoaded ? (
+          <SubscriptionListLoading logTag="[Channels]" />
+        ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-5 text-text-muted px-6 py-8 min-h-[280px]">
             <div className="w-full max-w-lg">{addBar}</div>
-            <div
-              className="w-16 h-16 rounded-xl flex items-center justify-center"
-              style={{
-                background: 'linear-gradient(135deg, rgba(232, 168, 73, 0.08) 0%, rgba(232, 168, 73, 0.02) 100%)',
-                border: '1px solid rgba(232, 168, 73, 0.1)'
-              }}
-            >
+            <div className="empty-state-icon">
               <Radio size={28} strokeWidth={1.2} className="text-accent/40" />
             </div>
             <div className="text-center space-y-1.5">
@@ -310,32 +319,40 @@ export default function ChannelsPage({
                     <ChannelAvatar src={row.logoUrl} name={row.displayName ?? row.identifier} size="md" />
                   </td>
                   <td>
-                    <span className="text-[11px] font-mono truncate block max-w-[200px] text-text-secondary" title={row.identifier}>
+                    <span className={`text-[11px] font-mono text-text-secondary ${subPageCellTruncateClass}`} title={row.identifier}>
                       {row.identifier}
                     </span>
                   </td>
-                  <td className="text-sm">{row.displayName ?? <span className="text-text-muted">&mdash;</span>}</td>
+                  <td className="text-sm">
+                    {row.displayName ? (
+                      <span className={subPageCellTruncateClass} title={row.displayName}>
+                        {row.displayName}
+                      </span>
+                    ) : (
+                      <span className="text-text-muted">&mdash;</span>
+                    )}
+                  </td>
                   <td>
-                    {row.error ? (
-                      <span className="text-[11px] text-danger">{row.error}</span>
-                    ) : row.displayName ? (
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" title="resolved" />
-                    ) : null}
+                    <SubscriptionRowStatus displayName={row.displayName} error={row.error} />
                   </td>
                   <td>
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         onClick={() => onOpenUrl(row.videosUrl)}
-                        className="p-1.5 rounded-md text-text-muted hover:text-accent hover:bg-accent-dim transition-all"
+                        className={subPageRowIconButtonClass}
                         title="Open /videos"
+                        aria-label={`Open ${row.displayName ?? row.identifier} videos in browser`}
                       >
                         <ExternalLink size={12} />
                       </button>
                       {row.channelPageUrl ? (
                         <button
+                          type="button"
                           onClick={() => onOpenUrl(row.channelPageUrl!)}
-                          className="p-1.5 rounded-md text-text-muted hover:text-accent hover:bg-accent-dim transition-all"
+                          className={subPageRowIconButtonClass}
                           title="Open channel page"
+                          aria-label={`Open ${row.displayName ?? row.identifier} channel page in browser`}
                         >
                           <ExternalLink size={12} />
                         </button>

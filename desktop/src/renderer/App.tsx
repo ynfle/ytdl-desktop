@@ -35,6 +35,10 @@ export default function App(): React.ReactElement {
   const [activePage, setActivePage] = useState<Page>('library')
   const [queueOpen, setQueueOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /** Inline Settings error for data-directory pick/set failures (also logged to the sync log). */
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  /** True while Settings → Rescan library is running (disables the button + shows spinner). */
+  const [rescanning, setRescanning] = useState(false)
   /** Drives app-level backdrop blur; overlay must sit above <Player /> in the tree, not inside <Sidebar />. */
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
 
@@ -161,22 +165,55 @@ export default function App(): React.ReactElement {
 
   /* ── Actions ── */
   const pickDir = useCallback(async () => {
-    const picked = await window.ytdl.pickDataDir()
-    if (!picked) return
-    const r = await window.ytdl.setDataDir(picked)
+    let picked: string | null
+    let r: { ok: boolean; error?: string }
+    try {
+      picked = await window.ytdl.pickDataDir()
+      if (!picked) {
+        console.info('[App] data dir pick cancelled')
+        return
+      }
+      r = await window.ytdl.setDataDir(picked)
+    } catch (err) {
+      // IPC itself threw (e.g. handler missing): keep logging + show inline.
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[App] pick/set data dir threw', { error: msg })
+      sync.appendLog(`[ui] data dir change failed: ${msg}\n`)
+      setSettingsError(`Could not change data directory: ${msg}`)
+      return
+    }
     if (!r.ok) {
+      console.warn('[App] setDataDir failed', { picked, error: r.error })
       sync.appendLog(`[ui] setDataDir failed: ${r.error}\n`)
+      // Surface inline in Settings too, not only in the Downloads log.
+      setSettingsError(`Could not use that folder: ${r.error ?? 'unknown error'}`)
       return
     }
     console.log(`[App] data dir changed to ${picked}`)
+    setSettingsError(null)
     lib.resetHydrate()
     setDataDir(picked)
   }, [sync, lib])
 
+  /** Settings → Rescan library; tracks `rescanning` so the button can show progress. */
   const handleRescan = useCallback(async () => {
-    const result = await lib.refreshLibrary()
-    applyLibraryScanResult(result)
+    console.info('[App] settings rescan start')
+    setRescanning(true)
+    try {
+      const result = await lib.refreshLibrary()
+      applyLibraryScanResult(result)
+      console.info('[App] settings rescan done', { count: result.videos.length })
+    } finally {
+      setRescanning(false)
+    }
   }, [lib.refreshLibrary, applyLibraryScanResult])
+
+  /** Close Settings and drop any stale inline error. */
+  const closeSettings = useCallback(() => {
+    console.log('[App] settings closed')
+    setSettingsOpen(false)
+    setSettingsError(null)
+  }, [])
 
   /** Channel row already confirmed via DeleteButton. */
   const handleRemoveChannel = useCallback(
@@ -290,12 +327,15 @@ export default function App(): React.ReactElement {
             onPlayFromOrdered={playback.playFromOrderedRels}
             onDelete={handleDeleteLibraryItem}
             isEmpty={lib.library.length === 0}
+            scanning={lib.scanning}
+            scanError={lib.scanError}
           />
         )
       case 'channels':
         return (
           <ChannelsPage
             rows={channels.channelRows}
+            listLoaded={channels.listLoaded}
             busy={sync.busy}
             podcastsBusy={podcasts.podcastsBusy}
             channelsBusy={channels.channelsBusy}
@@ -321,6 +361,7 @@ export default function App(): React.ReactElement {
         return (
           <PlaylistsPage
             rows={playlists.playlistRows}
+            listLoaded={playlists.listLoaded}
             busy={sync.busy}
             podcastsBusy={podcasts.podcastsBusy}
             channelsBusy={channels.channelsBusy}
@@ -346,6 +387,7 @@ export default function App(): React.ReactElement {
         return (
           <PodcastsPage
             rows={podcasts.podcastRows}
+            listLoaded={podcasts.listLoaded}
             busy={sync.busy}
             podcastsBusy={podcasts.podcastsBusy}
             channelsBusy={channels.channelsBusy}
@@ -469,11 +511,13 @@ export default function App(): React.ReactElement {
       {/* Settings modal */}
       <SettingsModal
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={closeSettings}
         dataDir={dataDir}
         onPickDir={() => void pickDir()}
         onRescan={() => void handleRescan()}
         busy={sync.busy}
+        error={settingsError}
+        rescanning={rescanning}
       />
     </div>
   )

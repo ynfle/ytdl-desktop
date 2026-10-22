@@ -42,6 +42,7 @@ export function MediaThumbSlot({
           : 'ring-1 ring-white/[0.05] hover:ring-white/[0.1]'}
       `}
       style={isActive ? { boxShadow: '0 0 12px rgba(232,168,73,0.18), 0 0 4px rgba(232,168,73,0.10)' } : undefined}
+      aria-hidden
     >
       {url ? (
         <>
@@ -71,13 +72,15 @@ export function MediaThumbSlot({
           />
         </>
       ) : (
+        // Placeholder: theme surfaces (raised → base) instead of hardcoded hex.
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{
-            background: 'linear-gradient(160deg, #18181e 0%, #111116 60%, #0d0d10 100%)'
+            background:
+              'linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-surface) 60%, var(--color-bg) 100%)'
           }}
         >
-          <Film size={16} strokeWidth={1.3} className="text-text-muted/20" />
+          <Film size={16} strokeWidth={1.3} className="text-text-muted/40" aria-hidden />
         </div>
       )}
 
@@ -85,14 +88,9 @@ export function MediaThumbSlot({
       {showPlayOverlay && url && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover/thumb:opacity-100">
           <div className="absolute inset-0 bg-black/35" />
-          <div
-            className="relative flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm"
-            style={{
-              background: 'linear-gradient(135deg, rgba(232,168,73,0.95) 0%, rgba(212,137,58,0.95) 100%)',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.5), 0 0 20px rgba(232,168,73,0.15)'
-            }}
-          >
-            <Play size={11} className="ml-px text-[#08080a] fill-[#08080a]" />
+          {/* Shared amber fill (`.bg-accent-gradient` in main.css) */}
+          <div className="bg-accent-gradient relative flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm">
+            <Play size={11} className="ml-px text-bg fill-bg" aria-hidden />
           </div>
         </div>
       )}

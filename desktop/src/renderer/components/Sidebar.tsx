@@ -49,11 +49,8 @@ export default function Sidebar({ activePage, onNavigate, onOpenSettings, onExpa
         {/* Brand mark */}
         <div className="flex items-center h-14 px-3 gap-3 shrink-0">
           <div
-            className="w-8 h-8 rounded-[10px] flex items-center justify-center text-bg font-bold text-[11px] shrink-0 tracking-tight"
-            style={{
-              background: 'linear-gradient(135deg, #e8a849 0%, #d4893a 100%)',
-              boxShadow: '0 2px 8px rgba(232, 168, 73, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
-            }}
+            aria-hidden="true"
+            className="bg-accent-gradient w-8 h-8 rounded-[10px] flex items-center justify-center text-bg font-bold text-[11px] shrink-0 tracking-tight"
           >
             yt
           </div>
@@ -73,9 +70,16 @@ export default function Sidebar({ activePage, onNavigate, onOpenSettings, onExpa
               <button
                 key={id}
                 type="button"
-                onClick={() => onNavigate(id)}
+                onClick={() => {
+                  console.info('[Sidebar] navigate', { from: activePage, to: id })
+                  onNavigate(id)
+                }}
+                // Labels live in the hover flyout (opacity 0 when collapsed), so name the button explicitly.
+                aria-label={label}
+                aria-current={active ? 'page' : undefined}
                 className={`
                   relative flex items-center gap-3 h-10 rounded-lg px-3 text-left transition-all duration-150
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset
                   ${active
                     ? 'text-accent'
                     : 'text-text-muted hover:text-text-secondary hover:bg-surface-raised/50'}
@@ -106,8 +110,13 @@ export default function Sidebar({ activePage, onNavigate, onOpenSettings, onExpa
         <div className="px-2 py-2 shrink-0">
           <button
             type="button"
-            onClick={onOpenSettings}
-            className="flex items-center gap-3 h-10 rounded-lg px-3 text-text-muted hover:text-text-secondary hover:bg-surface-raised/50 transition-all duration-150 w-full"
+            onClick={() => {
+              console.info('[Sidebar] open settings')
+              onOpenSettings()
+            }}
+            aria-label="Settings"
+            aria-haspopup="dialog"
+            className="flex items-center gap-3 h-10 rounded-lg px-3 text-text-muted hover:text-text-secondary hover:bg-surface-raised/50 transition-all duration-150 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
           >
             <Settings size={18} strokeWidth={1.6} className="shrink-0" />
             <span

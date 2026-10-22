@@ -240,14 +240,14 @@
     <div class="controls">
       <div class="timeline-row" title="Seek">
         <span class="time" id="tCur">0:00</span>
-        <input type="range" id="timeline" min="0" max="0" step="any" value="0" disabled />
+        <input type="range" id="timeline" min="0" max="0" step="any" value="0" disabled aria-label="Playback position" />
         <span class="time" id="tDur">0:00</span>
       </div>
       <div class="bar">
-        <button type="button" id="bBack" title="Seek back 10 seconds">&minus;10s</button>
-        <button type="button" id="bPlay" title="Play / Pause (Space)">Play</button>
-        <button type="button" id="bFwd" title="Seek forward 10 seconds">+10s</button>
-        <button type="button" id="bClose" title="Close">Close</button>
+        <button type="button" id="bBack" title="Seek back 10 seconds" aria-label="Seek back 10 seconds">&minus;10s</button>
+        <button type="button" id="bPlay" title="Play / Pause (Space)" aria-label="Play">Play</button>
+        <button type="button" id="bFwd" title="Seek forward 10 seconds" aria-label="Seek forward 10 seconds">+10s</button>
+        <button type="button" id="bClose" title="Close" aria-label="Close player">Close</button>
       </div>
     </div>
     <script>
@@ -372,6 +372,8 @@
 
         function updatePlayLabel() {
           bPlay.textContent = v.paused ? 'Play' : 'Pause'
+          // Keep the accessible name in step with the visible label.
+          bPlay.setAttribute('aria-label', v.paused ? 'Play' : 'Pause')
         }
 
         /** Shared by the Play button, Space, and main-window IPC `togglePlay`. */

@@ -158,6 +158,13 @@ export function useLibrary(
   podcastRows: PodcastInfoRow[]
 ) {
   const [library, setLibrary] = useState<LibraryVideo[]>([])
+  /**
+   * True while a scan is in flight. Starts true so the first paint shows a loading state
+   * instead of the "empty library" message before the initial scan resolves.
+   */
+  const [scanning, setScanning] = useState(true)
+  /** Last scan failure message (`r.error`); cleared on the next successful scan. */
+  const [scanError, setScanError] = useState<string | null>(null)
   /** Tracks which data root has been hydrated (one-shot per root). */
   const hydratedDataRootRef = useRef<string | null>(null)
   /** After first successful hydrate, allow patch writes. */
@@ -165,12 +172,24 @@ export function useLibrary(
 
   const refreshLibrary = useCallback(async () => {
     console.log('[useLibrary] scanning library')
-    const r = await window.ytdl.scanLibrary()
+    setScanning(true)
+    let r: Awaited<ReturnType<typeof window.ytdl.scanLibrary>>
+    try {
+      r = await window.ytdl.scanLibrary()
+    } finally {
+      // Clear the spinner whether the scan succeeded, failed, or the IPC threw.
+      setScanning(false)
+    }
     if (!r.ok) {
+      const errMsg = r.error ?? 'unknown error'
+      console.warn('[useLibrary] scan failed', { error: errMsg })
+      setScanError(errMsg)
       appendLog(`[ui] scan failed: ${r.error}\n`)
       return { videos: [] as LibraryVideo[], freshHydrate: false }
     }
+    setScanError(null)
     const videos = r.videos ?? []
+    console.info('[useLibrary] scan complete', { count: videos.length })
     setLibrary(videos)
     appendLog(`[ui] library: ${videos.length} media files\n`)
 
@@ -220,6 +239,10 @@ export function useLibrary(
     setLibrary,
     libraryGroups,
     refreshLibrary,
+    /** True while a scan runs (initially true until the first scan settles). */
+    scanning,
+    /** Last scan failure, or null after a successful scan. */
+    scanError,
     allowSpotSaveRef,
     resetHydrate
   }

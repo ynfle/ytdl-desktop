@@ -1,15 +1,17 @@
 /**
- * Rounded-square avatar for channels, playlists, and podcasts.
- * Uses generous corner radius (not a full circle) so non-square source
- * images don't look oval or distorted.
+ * Circular avatar for channels, playlists, and podcasts.
+ * The container is always square (equal w/h) with `rounded-full` + `overflow-hidden`,
+ * and the image uses `object-cover`, so non-square art is center-cropped into a true
+ * circle instead of being stretched into an oval.
  */
 
 type Size = 'sm' | 'md' | 'lg'
 
+/** Square dimensions + full radius per preset; w and h must stay equal to keep the mask circular. */
 const SIZE_CLASSES: Record<Size, string> = {
-  sm: 'w-7 h-7 rounded-lg text-[10px]',
-  md: 'w-8 h-8 rounded-[10px] text-[11px]',
-  lg: 'w-14 h-14 rounded-xl text-base'
+  sm: 'w-7 h-7 rounded-full text-[10px]',
+  md: 'w-8 h-8 rounded-full text-[11px]',
+  lg: 'w-14 h-14 rounded-full text-base'
 }
 
 type Props = {

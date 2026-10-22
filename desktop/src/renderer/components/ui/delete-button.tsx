@@ -107,16 +107,29 @@ const PRESS = {
 } as const;
 const INSTANT = { duration: 0 } as const;
 
-const SURFACE = "bg-[#F4F4F9] dark:bg-[#262626]";
-const RECESS = "bg-[#E7E7EF] dark:bg-[#1B1B1B]";
-const GLYPH = "text-[#868593] dark:text-[#9B9AA7]";
-const FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-[#868593]";
-const ACCENT = "#FF5F2E";
+/* App theme tokens (main.css @theme) replace the original Rare UI light/dark hex palette. */
+/** Tile + disc surface (lifted above the recess, like the original light-on-dark tray). */
+const SURFACE = "bg-surface-overlay";
+/** Confirm panel recess (one step darker than the tile so it reads as a tray). */
+const RECESS = "bg-surface-raised";
+/** Bin glyph color; brightens on hover / while the confirm panel is open. */
+const GLYPH =
+  "text-text-muted hover:text-text data-[state=open]:text-text transition-colors duration-200";
+/** Shared focus ring (accent, offset against the app background). */
+const FOCUS =
+  "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
+/** Destructive accent for the deleted tick (SVGs stroke with `currentColor`). */
+const ACCENT = "text-danger";
 
 const LIFT =
-  "shadow-[0_0.5px_1px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.08),inset_0_0.5px_0_rgba(255,255,255,0.9)] dark:shadow-[0_0.5px_1px_rgba(0,0,0,0.35),0_1.5px_4px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.07)]";
+  "shadow-[0_0.5px_1px_rgba(0,0,0,0.35),0_1.5px_4px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.07)]";
 
-const CIRCLE = `grid place-items-center rounded-full transition-colors duration-200 hover:bg-[#FAFAFD] dark:hover:bg-[#2C2C2C] ${FOCUS} ${SURFACE} ${LIFT}`;
+/** Confirm / cancel disc shape + focus + lift (fill comes from the tone classes below). */
+const CIRCLE = `grid place-items-center rounded-full transition-colors duration-200 ${FOCUS} ${LIFT}`;
+/** Confirm disc: danger wash so the destructive choice stands apart from Cancel. */
+const CIRCLE_DANGER = "bg-danger-dim hover:bg-danger/25 text-danger";
+/** Cancel disc: neutral surface, brightens on hover. */
+const CIRCLE_NEUTRAL = `${SURFACE} hover:bg-border-bright text-text-secondary hover:text-text`;
 
 const ICON = {
   viewBox: "0 0 24 24",
@@ -136,12 +149,14 @@ const circleMotion = {
   shown: { opacity: 1, scale: 1, transition: IN },
 };
 
+/** One round confirm / cancel button inside the open panel. */
 function Circle({
   label,
   onClick,
   children,
   circleClass,
   glyph,
+  tone = "neutral",
 }: {
   label: string;
   onClick: () => void;
@@ -149,6 +164,8 @@ function Circle({
   /** Confirm / cancel disc size for the active tile scale. */
   circleClass: string;
   glyph: number;
+  /** `danger` tints the disc for the destructive (confirm) action. */
+  tone?: "danger" | "neutral";
 }) {
   const reduced = useReducedMotion() ?? false;
 
@@ -157,11 +174,16 @@ function Circle({
       <motion.button
         type="button"
         aria-label={label}
+        title={label}
         onClick={onClick}
         whileHover={reduced ? undefined : { scale: 1.03 }}
         whileTap={reduced ? undefined : { scale: 0.84 }}
         transition={PRESS}
-        className={cn(CIRCLE, circleClass)}
+        className={cn(
+          CIRCLE,
+          tone === "danger" ? CIRCLE_DANGER : CIRCLE_NEUTRAL,
+          circleClass,
+        )}
       >
         <svg
           {...ICON}
@@ -201,6 +223,8 @@ export function DeleteButton({
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const trigger = useRef<HTMLButtonElement>(null);
+  /** Root element; pointerdown outside it dismisses the open confirm panel. */
+  const root = useRef<HTMLDivElement>(null);
   const timing = (transition: Transition) => (reduced ? INSTANT : transition);
 
   const top = useMotionValue(WALL_TOP);
@@ -230,15 +254,40 @@ export function DeleteButton({
     };
   }, [status, reduced, settle]);
 
-  const resolve = (next: Exclude<Status, "idle">) => {
+  /**
+   * Close the panel and report the outcome.
+   * @param refocus Return focus to the trigger (skip for outside clicks so focus follows the pointer).
+   */
+  const resolve = (next: Exclude<Status, "idle">, refocus = true) => {
     setOpen(false);
     setStatus(next);
-    trigger.current?.focus();
+    if (refocus) trigger.current?.focus();
     (next === "deleted" ? onConfirm : onCancel)?.();
   };
 
+  /** Latest `resolve` for the document listener (avoids re-binding on every render). */
+  const resolveRef = useRef(resolve);
+  useEffect(() => {
+    resolveRef.current = resolve;
+  });
+
+  // While open: a pointerdown anywhere outside the control cancels (treated as "kept").
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const el = root.current;
+      if (el && event.target instanceof Node && el.contains(event.target)) return;
+      console.info("[DeleteButton] outside pointerdown → kept");
+      resolveRef.current("kept", false);
+    };
+    // Capture phase so row handlers that stop propagation cannot keep the panel open.
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open]);
+
   return (
     <motion.div
+      ref={root}
       data-slot="delete-button"
       data-state={open ? "open" : "closed"}
       data-status={status}
@@ -246,14 +295,20 @@ export function DeleteButton({
       animate={{ width: open ? metrics.tile + metrics.panel : metrics.tile }}
       transition={timing(WIDTH)}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && open) resolve("kept");
+        if (event.key === "Escape" && open) {
+          // Consume Escape so outer listeners (e.g. queue drawer close) do not also fire.
+          event.preventDefault();
+          event.stopPropagation();
+          resolve("kept");
+        }
       }}
       {...props}
     >
       <motion.button
         ref={trigger}
         type="button"
-        aria-label="Delete"
+        aria-label={open ? "Cancel delete" : "Delete"}
+        title={open ? "Cancel" : "Delete"}
         aria-expanded={open}
         onClick={() => {
           if (open) return resolve("kept");
@@ -276,7 +331,8 @@ export function DeleteButton({
               {...ICON}
               width={metrics.bin}
               height={metrics.bin}
-              stroke={ACCENT}
+              stroke="currentColor"
+              className={ACCENT}
               strokeWidth="2.5"
               initial={{ opacity: 0, scale: 0.6 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -351,9 +407,10 @@ export function DeleteButton({
               label="Confirm delete"
               circleClass={metrics.circle}
               glyph={metrics.glyph}
+              tone="danger"
               onClick={() => resolve("deleted")}
             >
-              <path d="M4 12.5 9.5 18 20 7" stroke={ACCENT} />
+              <path d="M4 12.5 9.5 18 20 7" />
             </Circle>
             <Circle
               label="Cancel"

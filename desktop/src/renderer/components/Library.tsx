@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { ArrowLeft, Play, Plus, Film, Search, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Play, Plus, Film, Loader2, Search, X } from 'lucide-react'
 import type { LibraryVideo } from '../../../shared/ytdl-api'
 import type { LibraryVideoGroup } from '../hooks/useLibrary'
 import {
@@ -11,6 +11,57 @@ import {
 import { MediaThumbSlot } from './MediaThumbSlot'
 import { ChannelAvatar } from './ChannelAvatar'
 import { RowDeleteButton } from './ui/row-delete-button'
+import { iconCloseButtonClass } from './subscription-page-ui'
+
+/**
+ * Delay before a single row click queues, so a double-click (play) can cancel it.
+ * Without this, the first click of a double-click queues the row and `playFrom*` then
+ * merges that queue tail back in, leaving a duplicate of the just-started item in Queue.
+ */
+const ROW_QUEUE_CLICK_DELAY_MS = 250
+
+/** True when a keydown carries Ctrl / Meta / Alt (leave OS / app chords alone). */
+function hasCommandModifier(e: React.KeyboardEvent): boolean {
+  return e.ctrlKey || e.metaKey || e.altKey
+}
+
+/** Sort a channel's items oldest → newest (upload date, else file mtime) and return rel paths. */
+function chronologicalRels(items: readonly LibraryVideo[]): string[] {
+  return [...items]
+    .sort((a, b) => libraryItemSortMs(a) - libraryItemSortMs(b))
+    .map((i) => i.relPath)
+}
+
+/** Danger banner for a failed library scan; dismiss hides it until the message changes. */
+function ScanErrorBanner({
+  message,
+  onDismiss
+}: {
+  message: string
+  onDismiss: () => void
+}): React.ReactElement {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2.5 rounded-lg bg-danger-dim border border-danger/20 px-3 py-2 text-danger"
+    >
+      <AlertCircle size={14} className="shrink-0 mt-[3px]" aria-hidden />
+      <div className="flex-1 min-w-0 text-xs leading-relaxed">
+        <span className="font-semibold">Library scan failed. </span>
+        <span className="break-words">{message}</span>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className={`${iconCloseButtonClass} -my-1 -mr-1.5 shrink-0`}
+        aria-label="Dismiss scan error"
+        title="Dismiss"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  )
+}
 
 /** Human-friendly relative time label (used when no `.info.json` upload date). */
 function relativeTime(ms: number): string {
@@ -128,9 +179,16 @@ type Props = {
   /** Permanently delete one file. The row button confirms first. */
   onDelete: (relPath: string) => void
   isEmpty: boolean
+  /** True until the first library scan completes; empty list shows a loading state instead of "No videos yet". */
+  scanning?: boolean
+  /** Last library scan error message; shown as a danger banner above the list. */
+  scanError?: string | null
 }
 
-/** One media row: click queues, double-click plays (handler from parent context). */
+/**
+ * One media row: click queues (deferred so double-click can cancel), double-click plays.
+ * Keyboard: Enter plays, `q` (or Space when not consumed by global play/pause) queues.
+ */
 function LibraryMediaRow({
   item,
   group,
@@ -150,15 +208,98 @@ function LibraryMediaRow({
   const rowTime = libraryRowTimeLabel(item)
   const durationLabel = formatLibraryDuration(item.duration)
   const isActive = item.relPath === currentRel
+  /** Pending single-click queue timer (cancelled by a double-click). */
+  const queueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Drop a pending queue on unmount (e.g. row deleted / view switched) so it never targets a stale row.
+  useEffect(
+    () => () => {
+      if (queueTimerRef.current != null) {
+        clearTimeout(queueTimerRef.current)
+        queueTimerRef.current = null
+        console.info('[Library] row unmounted; pending click-queue cancelled', item.relPath)
+      }
+    },
+    [item.relPath]
+  )
+
+  /** Cancel a pending deferred queue; returns true when one was pending. */
+  const cancelPendingQueue = (): boolean => {
+    if (queueTimerRef.current == null) return false
+    clearTimeout(queueTimerRef.current)
+    queueTimerRef.current = null
+    return true
+  }
+
+  /** Single click: queue after a short delay unless a double-click follows. */
+  const handleClick = (e: React.MouseEvent<HTMLLIElement>): void => {
+    // Second click of a double-click: the dblclick handler owns this gesture.
+    if (e.detail > 1) {
+      console.info('[Library] row repeat click ignored (double-click in progress)', {
+        relPath: item.relPath,
+        detail: e.detail
+      })
+      return
+    }
+    cancelPendingQueue()
+    queueTimerRef.current = setTimeout(() => {
+      queueTimerRef.current = null
+      console.info('[Library] row click → queue', item.relPath)
+      onQueue(item.relPath)
+    }, ROW_QUEUE_CLICK_DELAY_MS)
+  }
+
+  /** Double click: play now; cancels the first click's pending queue to avoid a duplicate. */
+  const handleDoubleClick = (): void => {
+    const cancelled = cancelPendingQueue()
+    console.info('[Library] row double-click → play', {
+      relPath: item.relPath,
+      cancelledPendingQueue: cancelled
+    })
+    onPlay(item.relPath)
+  }
+
+  /** Keyboard: Enter = play, `q` / Space = queue (immediate; no double-click ambiguity). */
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLLIElement>): void => {
+    // Keys from nested controls (delete button) are not row actions.
+    if (e.target !== e.currentTarget) return
+    if (e.repeat || hasCommandModifier(e)) return
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      cancelPendingQueue()
+      console.info('[Library] row Enter → play', item.relPath)
+      onPlay(item.relPath)
+      return
+    }
+    const isSpace = e.key === ' ' || e.code === 'Space'
+    if (isSpace && e.defaultPrevented) {
+      // Global Space shortcut (usePlayback capture listener) already toggled play/pause.
+      console.info('[Library] row Space consumed by global play/pause; not queueing', item.relPath)
+      return
+    }
+    if (isSpace || e.key === 'q' || e.key === 'Q') {
+      e.preventDefault()
+      cancelPendingQueue()
+      console.info('[Library] row key → queue', { relPath: item.relPath, key: e.key })
+      onQueue(item.relPath)
+    }
+  }
+
   return (
     <li
       className={`
         group flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-all duration-120
-        ${isActive ? 'now-playing-glow bg-accent-dim/30' : 'hover:bg-surface-raised/60'}
+        outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60
+        ${isActive ? 'now-playing-glow bg-accent-dim/30' : 'hover:bg-surface-raised/60 focus-visible:bg-surface-raised/60'}
       `}
-      onClick={() => onQueue(item.relPath)}
-      onDoubleClick={() => onPlay(item.relPath)}
-      title={item.relPath}
+      tabIndex={0}
+      role="button"
+      aria-label={isActive ? `${label} (now playing)` : label}
+      aria-current={isActive ? 'true' : undefined}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      onKeyDown={handleKeyDown}
+      title={`${item.relPath}\nClick or Q to queue · Double-click or Enter to play`}
     >
       <MediaThumbSlot
         thumbRelPath={item.thumbRelPath}
@@ -174,13 +315,14 @@ function LibraryMediaRow({
         ) : (
           <Plus
             size={13}
-            className="text-text-muted opacity-0 group-hover:opacity-70 transition-opacity duration-150"
+            className="text-text-muted opacity-0 group-hover:opacity-70 group-focus-visible:opacity-70 transition-opacity duration-150"
+            aria-hidden
           />
         )}
       </div>
 
       <span
-        className={`flex-1 text-[11px] truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text'}`}
+        className={`flex-1 min-w-0 text-[11px] truncate leading-tight ${isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text group-focus-visible:text-text'}`}
         title={label}
       >
         {label}
@@ -202,7 +344,7 @@ function LibraryMediaRow({
             {rowTime.uploadDate}
           </span>
         ) : null}
-        <span className="text-[10px] text-text-muted/80 tabular-nums font-mono truncate max-w-full">
+        <span className="text-[10px] text-text-muted tabular-nums font-mono truncate max-w-full">
           {rowTime.downloadAge}
         </span>
       </div>
@@ -225,10 +367,21 @@ export default function LibraryPage({
   onPlayFrom,
   onPlayFromOrdered,
   onDelete,
-  isEmpty
+  isEmpty,
+  scanning = false,
+  scanError = null
 }: Props) {
   /** Sticky search query (filters filename, channel name, display title). */
   const [searchQuery, setSearchQuery] = useState('')
+  /** Scan error message the user dismissed; a different message shows the banner again. */
+  const [dismissedScanError, setDismissedScanError] = useState<string | null>(null)
+  /** Banner text when a scan error is present and not dismissed. */
+  const visibleScanError = scanError && scanError !== dismissedScanError ? scanError : null
+
+  // Surface scan state transitions in the console for debugging startup / rescans.
+  useEffect(() => {
+    console.info('[Library] scan state', { scanning, isEmpty, hasError: scanError != null })
+  }, [scanning, isEmpty, scanError])
   /** When set, show only that channel's media (detail page). */
   const [channelGroupKey, setChannelGroupKey] = useState<string | null>(null)
   /** Scrollable file list under the sticky chrome. */
@@ -328,11 +481,9 @@ export default function LibraryPage({
       return
     }
     // Full channel list (not search-filtered) so Up next stays complete for the show.
-    const chronological = [...channelGroup.items].sort(
-      (a, b) => libraryItemSortMs(a) - libraryItemSortMs(b)
-    )
-    const orderedRels = chronological.map((i) => i.relPath)
-    const withUpload = chronological.filter((i) => i.uploadedAtMs != null).length
+    // Full channel list (not search-filtered) so Up next stays complete for the show.
+    const orderedRels = chronologicalRels(channelGroup.items)
+    const withUpload = channelGroup.items.filter((i) => i.uploadedAtMs != null).length
     console.info('[Library] channel chronological play', {
       groupKey: channelGroup.groupKey,
       startRel: relPath,
@@ -343,24 +494,62 @@ export default function LibraryPage({
     onPlayFromOrdered(orderedRels, relPath)
   }
 
+  /**
+   * Keyboard "play channel" from a group header: whole channel (unfiltered),
+   * oldest → newest, starting at the earliest item.
+   */
+  const playWholeChannel = (groupKey: string): void => {
+    const full = groups.find((g) => g.groupKey === groupKey)
+    if (!full || full.items.length === 0) {
+      console.warn('[Library] playWholeChannel: group missing or empty', { groupKey })
+      return
+    }
+    const orderedRels = chronologicalRels(full.items)
+    console.info('[Library] header play channel (chronological)', {
+      groupKey,
+      count: orderedRels.length,
+      startRel: orderedRels[0]
+    })
+    onPlayFromOrdered(orderedRels, orderedRels[0])
+  }
+
+  /** Dismiss the current scan error banner (until a new message arrives). */
+  const dismissScanError = (): void => {
+    console.info('[Library] scan error banner dismissed')
+    setDismissedScanError(scanError)
+  }
+
   if (isEmpty) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-5 text-text-muted px-8">
-        <div
-          className="w-20 h-20 rounded-2xl flex items-center justify-center"
-          style={{
-            background: 'linear-gradient(135deg, rgba(232, 168, 73, 0.08) 0%, rgba(232, 168, 73, 0.02) 100%)',
-            border: '1px solid rgba(232, 168, 73, 0.1)'
-          }}
-        >
-          <Film size={32} strokeWidth={1.2} className="text-accent/50" />
-        </div>
-        <div className="text-center space-y-2">
-          <p className="text-base font-semibold text-text-secondary">No videos yet</p>
-          <p className="text-sm text-text-muted max-w-xs leading-relaxed">
-            Choose a data folder and download some channels to get started.
-          </p>
-        </div>
+      <div className="flex flex-col h-full">
+        {visibleScanError ? (
+          <div className="px-6 pt-4 shrink-0">
+            <ScanErrorBanner message={visibleScanError} onDismiss={dismissScanError} />
+          </div>
+        ) : null}
+        {scanning ? (
+          // First scan still running: calm loading state instead of the "No videos yet" prompt.
+          <div
+            className="flex flex-col items-center justify-center flex-1 gap-3 text-text-muted px-8"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 size={22} className="animate-spin text-accent/70" aria-hidden />
+            <p className="text-sm text-text-secondary">Scanning library…</p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center flex-1 gap-5 text-text-muted px-8">
+            <div className="empty-state-icon">
+              <Film size={32} strokeWidth={1.2} className="text-accent/50" aria-hidden />
+            </div>
+            <div className="text-center space-y-2">
+              <p className="text-base font-semibold text-text-secondary">No videos yet</p>
+              <p className="text-sm text-text-muted max-w-xs leading-relaxed">
+                Choose a data folder and download some channels to get started.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -424,6 +613,15 @@ export default function LibraryPage({
                 setSearchQuery(next)
                 console.log('[Library] search query changed', { length: next.length })
               }}
+              onKeyDown={(e) => {
+                // Escape clears a non-empty query; an empty field lets Escape bubble as usual.
+                if (e.key === 'Escape' && searchQuery.length > 0) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('[Library] search cleared via Escape')
+                  setSearchQuery('')
+                }
+              }}
               placeholder={
                 inChannelDetail
                   ? `Search in ${channelGroup.title}…`
@@ -439,8 +637,9 @@ export default function LibraryPage({
                   console.log('[Library] clear search')
                   setSearchQuery('')
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-text-muted hover:text-text transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-text-muted hover:text-text transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                 title="Clear search"
+                aria-label="Clear search"
               >
                 <X size={14} />
               </button>
@@ -451,6 +650,9 @@ export default function LibraryPage({
 
       {/* Scrollable channel groups (under sticky chrome) */}
       <div ref={listScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {visibleScanError ? (
+          <ScanErrorBanner message={visibleScanError} onDismiss={dismissScanError} />
+        ) : null}
         {visibleGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-text-muted px-6">
             <p className="text-sm font-medium text-text-secondary">No matches</p>
@@ -471,14 +673,40 @@ export default function LibraryPage({
               <div
                 className={`
                   sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-surface-raised/80 backdrop-blur-md border-b border-border
-                  ${inChannelDetail ? '' : 'cursor-pointer hover:bg-surface-raised transition-colors'}
+                  ${inChannelDetail ? '' : 'cursor-pointer hover:bg-surface-raised transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60'}
                 `}
                 onClick={
                   inChannelDetail
                     ? undefined
                     : () => openChannel(group.groupKey, group.title)
                 }
-                title={inChannelDetail ? undefined : `Open ${group.title}`}
+                onKeyDown={
+                  inChannelDetail
+                    ? undefined
+                    : (e) => {
+                        if (e.target !== e.currentTarget) return
+                        if (e.repeat || hasCommandModifier(e)) return
+                        // Shift+Enter or `p`: play this channel oldest → newest.
+                        if ((e.key === 'Enter' && e.shiftKey) || e.key === 'p' || e.key === 'P') {
+                          e.preventDefault()
+                          playWholeChannel(group.groupKey)
+                          return
+                        }
+                        // Enter: open channel detail (same as click).
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          console.info('[Library] header Enter → open channel', group.groupKey)
+                          openChannel(group.groupKey, group.title)
+                        }
+                      }
+                }
+                tabIndex={inChannelDetail ? undefined : 0}
+                aria-label={
+                  inChannelDetail
+                    ? undefined
+                    : `${group.title}, ${group.items.length} file${group.items.length !== 1 ? 's' : ''}. Enter to open, P to play channel`
+                }
+                title={inChannelDetail ? undefined : `Open ${group.title}\nShift+Enter or P plays the channel oldest → newest`}
                 role={inChannelDetail ? undefined : 'button'}
               >
                 <ChannelAvatar src={group.logoUrl} name={group.title} size="md" />

@@ -18,6 +18,8 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
   const [channelRows, setChannelRows] = useState<ChannelInfoRow[]>([])
   const [channelsBusy, setChannelsBusy] = useState(false)
   const [channelsProgress, setChannelsProgress] = useState<string | null>(null)
+  /** True once the first cache hydrate settles (success or failure); gates the empty state so it does not flash. */
+  const [listLoaded, setListLoaded] = useState(false)
 
   /** Validated row from Look up, before user confirms Add to channels.txt. */
   const [addPreview, setAddPreview] = useState<{ identifier: string; row: ChannelInfoRow } | null>(null)
@@ -40,6 +42,14 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
   /** Load channels on mount and when dataDir changes. */
   useEffect(() => {
     void loadChannelIdentifiers()
+      .catch((e: unknown) => {
+        // Invoke threw (e.g. missing handler); still mark loaded so the empty state can render.
+        console.error('[useChannels] initial hydrate threw', e)
+      })
+      .finally(() => {
+        setListLoaded(true)
+        console.info('[useChannels] initial list load settled; listLoaded=true')
+      })
   }, [dataDir, loadChannelIdentifiers])
 
   /** Drop add-channel draft when switching data root. */
@@ -210,6 +220,7 @@ export function useChannels(appendLog: (chunk: string) => void, dataDir: string)
     channelRows,
     channelsBusy,
     channelsProgress,
+    listLoaded,
     loadChannelIdentifiers,
     refreshChannelNames,
     addPreview,
