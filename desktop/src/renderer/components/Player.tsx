@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, Square, PictureInPicture2, SkipForward, ListMusic, Music2 } from 'lucide-react'
 import { motion } from 'motion/react'
-import type { FloatingPlayerSyncPayload } from '../../../shared/ytdl-api'
+import type { FloatingPlayerSyncPayload, MediaChapter } from '../../../shared/ytdl-api'
 import { TransportThumb } from './MediaThumbSlot'
+import { activeMediaChapter, ChapterListButton, ChapterScrubber } from './PlayerChapters'
 
 /** localStorage key for the right-hand video column width (px). */
 const VIDEO_ASIDE_WIDTH_STORAGE_KEY = 'ytdl.videoAsideWidthPx'
@@ -298,6 +299,8 @@ function usePlayerChrome({
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isPaused, setIsPaused] = useState(true)
+  /** Chapters for `currentRel`. Empty when the file and its sidecar have none. */
+  const [chapters, setChapters] = useState<MediaChapter[]>([])
   /** null until metadata/resize; false = audio-only → show {@link posterUrl} behind hidden video. */
   const [hasVideoFrame, setHasVideoFrame] = useState<boolean | null>(null)
   const seekRef = useRef(false)
@@ -307,6 +310,37 @@ function usePlayerChrome({
   useEffect(() => {
     setHasVideoFrame(null)
     console.info('[Player] video pane: reset hasVideoFrame for new track', { currentRel })
+  }, [currentRel])
+
+  // Load chapters when the track changes. Clear first so the previous file's markers do not flash.
+  useEffect(() => {
+    setChapters([])
+    if (!currentRel) return
+    let cancelled = false
+    const rel = currentRel
+    console.info('[Player] loading chapters', { rel })
+    void window.ytdl
+      .getMediaChapters(rel)
+      .then((r) => {
+        if (cancelled) return
+        if (!r.ok) {
+          console.warn('[Player] chapters request failed', { rel, error: r.error })
+          return
+        }
+        const next = r.chapters ?? []
+        setChapters(next)
+        console.info('[Player] chapters loaded', {
+          rel,
+          count: next.length,
+          firstTitle: next[0]?.title ?? null
+        })
+      })
+      .catch((e: unknown) => {
+        console.warn('[Player] chapters request threw', { rel, err: String(e) })
+      })
+    return () => {
+      cancelled = true
+    }
   }, [currentRel])
 
   useEffect(() => {
@@ -366,9 +400,9 @@ function usePlayerChrome({
     })
   }, [videoRef])
 
-  const onScrub = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const t = Number(e.target.value)
+  const seekTo = useCallback(
+    (t: number) => {
+      if (!Number.isFinite(t)) return
       if (remoteFloatingTransport) {
         onFloatingSeek(t)
         return
@@ -380,6 +414,27 @@ function usePlayerChrome({
       setCurrentTime(t)
     },
     [videoRef, remoteFloatingTransport, onFloatingSeek]
+  )
+
+  const onScrub = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      seekTo(Number(e.target.value))
+    },
+    [seekTo]
+  )
+
+  /** Chapter menu / tick: same path as the scrubber, including floating PiP. */
+  const seekToChapter = useCallback(
+    (chapter: MediaChapter) => {
+      console.info('[Player] chapter seek', {
+        title: chapter.title,
+        startSec: chapter.startSec,
+        currentRel,
+        remoteFloatingTransport
+      })
+      seekTo(chapter.startSec)
+    },
+    [seekTo, currentRel, remoteFloatingTransport]
   )
 
   const togglePlayPause = useCallback(() => {
@@ -405,11 +460,13 @@ function usePlayerChrome({
     floatingSync && floatingSync.duration > 0 ? floatingSync.duration : duration
   const barTime = floatingSync ? floatingSync.currentTime : currentTime
   const barPaused = floatingSync ? !floatingSync.playing : isPaused
-  const pct = barDuration > 0 ? (barTime / barDuration) * 100 : 0
   /** Nothing to scrub until a track is loaded with a known duration (floating PiP reports via `floatingSync`). */
   const seekDisabled = !currentRel || !(barDuration > 0)
-  /** Screen-reader text for the seek slider, e.g. "1:05 of 12:30". */
-  const seekValueText = `${fmtTime(barTime)} of ${fmtTime(barDuration)}`
+  const activeChapter = activeMediaChapter(chapters, barTime)
+  /** Screen-reader text for the seek slider, e.g. "1:05 of 12:30, Intro". */
+  const seekValueText = activeChapter
+    ? `${fmtTime(barTime)} of ${fmtTime(barDuration)}, ${activeChapter.title}`
+    : `${fmtTime(barTime)} of ${fmtTime(barDuration)}`
 
   useEffect(() => {
     console.info('[Player] seek slider enabled state', { seekDisabled, currentRel, barDuration })
@@ -473,7 +530,7 @@ function usePlayerChrome({
   )
 
   const transportBar = (
-    <div className="transport-bar flex h-[68px] w-full min-w-0 shrink-0 items-center gap-4 px-5">
+    <div className="transport-bar relative z-20 flex h-[68px] w-full min-w-0 shrink-0 items-center gap-4 px-5">
       {/* Current track artwork */}
       <TransportThumb posterUrl={posterUrl} />
 
@@ -513,27 +570,27 @@ function usePlayerChrome({
 
       {/* Track info + scrubber */}
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
-        <span className="truncate text-[11px] leading-tight text-text-secondary" title={trackLabel ?? undefined}>
-          {trackLabel ?? <span className="text-text-muted">Nothing playing</span>}
-        </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="min-w-0 flex-1 truncate text-[11px] leading-tight text-text-secondary"
+            title={trackLabel ?? undefined}
+          >
+            {trackLabel ?? <span className="text-text-muted">Nothing playing</span>}
+          </span>
+          <ChapterListButton chapters={chapters} currentTime={barTime} onSeek={seekToChapter} />
+        </div>
         <div className="flex items-center gap-2.5">
           <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-text-muted">
             {fmtTime(barTime)}
           </span>
-          <input
-            type="range"
-            min={0}
-            max={barDuration || 0}
-            step={0.1}
-            value={barTime}
-            onChange={onScrub}
+          <ChapterScrubber
+            chapters={chapters}
+            currentTime={barTime}
+            duration={barDuration}
             disabled={seekDisabled}
-            aria-label="Playback position"
-            aria-valuetext={seekValueText}
-            className="h-1 flex-1 disabled:cursor-not-allowed disabled:opacity-40"
-            style={{
-              background: `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-border-bright) ${pct}%)`
-            }}
+            valueText={seekValueText}
+            onScrub={onScrub}
+            onSeekChapter={seekToChapter}
           />
           <span className="w-10 shrink-0 font-mono text-[10px] tabular-nums text-text-muted">
             {fmtTime(barDuration)}

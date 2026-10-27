@@ -13,6 +13,18 @@ export type LibraryVideo = {
   duration: number | null
 }
 
+/**
+ * One chapter marker for the player.
+ * Times are seconds from the start of the file. `title` is never empty after normalization.
+ */
+export type MediaChapter = {
+  /** Start offset in seconds. */
+  startSec: number
+  /** End offset in seconds when the container or sidecar provided one. */
+  endSec: number | null
+  title: string
+}
+
 /** One row from channels.txt with optional title resolved via yt-dlp (no download). */
 export type ChannelInfoRow = {
   /** Line from channels.txt (e.g. @handle, channel/UC…, c/name). */
@@ -135,6 +147,16 @@ export type YtdlApi = {
   getEmbeddedMediaTitle: (relPath: string) => Promise<{
     ok: boolean
     title?: string | null
+    error?: string
+  }>
+  /**
+   * Chapters for one library file. Prefers markers embedded in the container
+   * (ffprobe / music-metadata). If the file has none, uses the yt-dlp `.info.json`
+   * `chapters` array. `chapters` is empty when neither source has any.
+   */
+  getMediaChapters: (relPath: string) => Promise<{
+    ok: boolean
+    chapters?: MediaChapter[]
     error?: string
   }>
   /** Remove one library media file under the data root (permanent delete). */

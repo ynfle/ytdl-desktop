@@ -19,6 +19,7 @@ const api: YtdlApi = {
   scanLibrary: () => ipcRenderer.invoke('library:scan'),
   mediaUrl: (relPath: string) => ipcRenderer.invoke('library:mediaUrl', relPath),
   getEmbeddedMediaTitle: (relPath: string) => ipcRenderer.invoke('library:getEmbeddedTitle', relPath),
+  getMediaChapters: (relPath: string) => ipcRenderer.invoke('library:getChapters', relPath),
   deleteLibraryMedia: (relPath: string) => ipcRenderer.invoke('library:deleteMedia', relPath),
   syncChannels: () => ipcRenderer.invoke('sync:channels'),
   syncPlaylists: () => ipcRenderer.invoke('sync:playlists'),

@@ -4,6 +4,8 @@ import { promises as fs } from 'fs'
 import { getDataDir, isPathInsideRoot } from './config-store'
 import { isYtDlpIncompleteArtifact, LIBRARY_MEDIA_EXT, LOG } from './constants'
 import { humanizeRestrictFilename } from '../../shared/humanize-restrict-filename'
+import type { MediaChapter } from '../../shared/ytdl-api'
+import { readMediaChapters } from './media-chapters'
 import { readEmbeddedMediaTitle, ytDlpInfoJsonSidecarPaths } from './media-embedded-title'
 import { getMediaAuth } from './media-server'
 import { scanLibraryVideos } from './library-scan'
@@ -12,6 +14,10 @@ import { unlinkSidecarThumbnailsBesideMedia, unlinkYtDlpInfoJsonSidecarsBesideMe
 /** In-memory cache: re-read tags only when `mtimeMs` changes. Bump schema when title logic changes. */
 const EMBEDDED_TITLE_CACHE_SCHEMA = 5
 const embeddedTitleCache = new Map<string, { mtimeMs: number; title: string | null }>()
+
+/** Bump when chapter parsing changes so a running app does not keep stale lists. */
+const CHAPTER_CACHE_SCHEMA = 1
+const chapterCache = new Map<string, { mtimeMs: number; chapters: MediaChapter[] }>()
 
 function embeddedTitleCacheKey(relPath: string): string {
   return `${EMBEDDED_TITLE_CACHE_SCHEMA}:${relPath}`
@@ -135,6 +141,69 @@ export function registerLibraryEmbeddedTitleIpc(): void {
       return { ok: true as const, title }
     } catch (e) {
       console.error(LOG, 'library:getEmbeddedTitle', e)
+      return { ok: false as const, error: String(e) }
+    }
+  })
+}
+
+/**
+ * `library:getChapters` — container chapters, then yt-dlp `.info.json`.
+ * Same path rules as `library:mediaUrl`. Cached until the file or sidecar mtime changes.
+ */
+export function registerLibraryChaptersIpc(): void {
+  ipcMain.handle('library:getChapters', async (_e, relPath: unknown) => {
+    try {
+      if (typeof relPath !== 'string' || relPath.length === 0) {
+        console.warn(LOG, 'library:getChapters invalid relPath')
+        return { ok: false as const, error: 'invalid relPath' }
+      }
+      const root = getDataDir()
+      const full = normalize(join(root, relPath))
+      if (!isPathInsideRoot(root, full)) {
+        console.warn(LOG, 'library:getChapters path outside data root', relPath)
+        return { ok: false as const, error: 'path not allowed' }
+      }
+      if (isYtDlpIncompleteArtifact(basename(full))) {
+        console.warn(LOG, 'library:getChapters yt-dlp temp artifact', relPath)
+        return { ok: false as const, error: 'incomplete download artifact' }
+      }
+      const ext = extname(full).toLowerCase()
+      if (!LIBRARY_MEDIA_EXT.has(ext)) {
+        console.warn(LOG, 'library:getChapters extension not allowed', ext)
+        return { ok: false as const, error: 'not a library media file' }
+      }
+      let st: Awaited<ReturnType<typeof fs.stat>>
+      try {
+        st = await fs.stat(full)
+      } catch (e) {
+        console.warn(LOG, 'library:getChapters stat failed', full, e)
+        return { ok: false as const, error: String(e) }
+      }
+      if (!st.isFile()) {
+        return { ok: false as const, error: 'not a file' }
+      }
+      // Sidecar mtime is part of the key so a rewritten `.info.json` refreshes the list.
+      let cacheFingerprint = st.mtimeMs
+      for (const sidecar of ytDlpInfoJsonSidecarPaths(full)) {
+        try {
+          const jst = await fs.stat(sidecar)
+          cacheFingerprint = Math.max(cacheFingerprint, jst.mtimeMs)
+        } catch {
+          /* no sidecar */
+        }
+      }
+      const ck = `${CHAPTER_CACHE_SCHEMA}:${relPath}`
+      const hit = chapterCache.get(ck)
+      if (hit && hit.mtimeMs === cacheFingerprint) {
+        console.info(LOG, 'library:getChapters cache hit', { relPath, count: hit.chapters.length })
+        return { ok: true as const, chapters: hit.chapters }
+      }
+      const chapters = await readMediaChapters(full)
+      chapterCache.set(ck, { mtimeMs: cacheFingerprint, chapters })
+      console.info(LOG, 'library:getChapters', { relPath, count: chapters.length })
+      return { ok: true as const, chapters }
+    } catch (e) {
+      console.error(LOG, 'library:getChapters', e)
       return { ok: false as const, error: String(e) }
     }
   })

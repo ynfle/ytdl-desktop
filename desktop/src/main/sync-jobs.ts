@@ -82,6 +82,8 @@ function youtubeChannelLikeDownloadArgs(opts: {
     'ejs:github',
     '--write-info-json',
     '--embed-metadata',
+    // Chapter markers inside the container (player also reads `.info.json` when this is absent).
+    '--embed-chapters',
     '-f',
     'bestvideo[height<=720]+bestaudio/best[height<=720]',
     '--write-thumbnail',
@@ -416,6 +418,8 @@ async function runSyncPodcastsJobInner(dataRoot: string): Promise<void> {
         'ejs:github',
         '--write-info-json',
         '--embed-metadata',
+        // RSS / podcast chapter markers into the audio file when the feed has them.
+        '--embed-chapters',
         '--write-thumbnail',
         '-f',
         'bestaudio/best',
@@ -559,6 +563,7 @@ async function runSyncYtrecJobInner(dataRoot: string, count: number): Promise<vo
     '--no-write-playlist-metafiles',
     '--write-info-json',
     '--embed-metadata',
+    '--embed-chapters',
     '-f',
     'bestvideo[height<=720]+bestaudio/best[height<=720]',
     '-o',

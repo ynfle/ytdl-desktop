@@ -90,6 +90,7 @@ download_podcasts() {
             --remote-components ejs:github \
             --write-info-json \
             --embed-metadata \
+            --embed-chapters \
             --write-thumbnail \
             -f 'bestaudio/best' \
             -o "$PODCAST_ROOT/$folder_id/${YTDLP_PODCAST_BASENAME}.%(ext)s" \

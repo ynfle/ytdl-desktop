@@ -22,6 +22,7 @@ YTDLP_COMMON=(
     --remote-components ejs:github
     --write-info-json
     --embed-metadata
+    --embed-chapters
     -f 'bestvideo[height<=720]+bestaudio/best[height<=720]'
     --write-thumbnail
     --embed-thumbnail
@@ -67,6 +68,7 @@ if [[ "$1" == "ytrec" ]]; then
         --no-write-playlist-metafiles \
         --write-info-json \
         --embed-metadata \
+        --embed-chapters \
         --write-thumbnail \
         --embed-thumbnail \
         --convert-thumbnails jpg \
