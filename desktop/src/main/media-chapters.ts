@@ -234,6 +234,28 @@ async function readChaptersViaMusicMetadata(absPath: string): Promise<MediaChapt
   }
 }
 
+/** Seconds from the first chapter start to the last. Sorted lists only. */
+function timelineSpanSec(chapters: readonly MediaChapter[]): number {
+  if (chapters.length < 2) return 0
+  return chapters[chapters.length - 1]!.startSec - chapters[0]!.startSec
+}
+
+/**
+ * ffmpeg sometimes writes chapter atoms as indexes in a 1/4410000 time base, so
+ * ffprobe reports every start at t≈0. The yt-dlp sidecar still has real `start_time`s.
+ * Prefer that sidecar when its timeline actually spans the episode.
+ */
+export function embeddedTimelineIsUnusable(
+  embedded: readonly MediaChapter[],
+  sidecar: readonly MediaChapter[]
+): boolean {
+  if (embedded.length === 0 || sidecar.length < 2) return false
+  const sidecarSpan = timelineSpanSec(sidecar)
+  if (sidecarSpan < 30) return false
+  const embeddedSpan = timelineSpanSec(embedded)
+  return embeddedSpan < Math.min(5, sidecarSpan * 0.02)
+}
+
 /**
  * When the container has times but no names, copy titles from the sidecar
  * whose start is within 1.5s (or the same index).
@@ -254,8 +276,8 @@ function applySidecarTitles(embedded: MediaChapter[], sidecar: MediaChapter[]): 
 /**
  * Chapters for one library file.
  * Prefers markers embedded in the container (ffprobe, then music-metadata).
- * If the file has none, uses the yt-dlp `.info.json` `chapters` array — that is
- * where YouTube/RSS chapters land when the download did not embed them.
+ * If those markers are missing or collapsed onto t=0, uses the yt-dlp `.info.json`
+ * `chapters` array — that is where YouTube/RSS chapters land with real start times.
  */
 export async function readMediaChapters(absPath: string): Promise<MediaChapter[]> {
   const sidecar = await readInfoJsonChapters(absPath)
@@ -270,6 +292,16 @@ export async function readMediaChapters(absPath: string): Promise<MediaChapter[]
       audioExt
     })
     embedded = await readChaptersViaMusicMetadata(absPath)
+  }
+  if (embeddedTimelineIsUnusable(embedded, sidecar)) {
+    console.info(LOG, 'readMediaChapters ignoring collapsed embedded timeline', {
+      sample: absPath.slice(-64),
+      embeddedCount: embedded.length,
+      embeddedSpan: timelineSpanSec(embedded),
+      sidecarCount: sidecar.length,
+      sidecarSpan: timelineSpanSec(sidecar)
+    })
+    embedded = []
   }
   if (embedded.length > 0) {
     const merged = applySidecarTitles(embedded, sidecar)

@@ -16,7 +16,7 @@ const EMBEDDED_TITLE_CACHE_SCHEMA = 5
 const embeddedTitleCache = new Map<string, { mtimeMs: number; title: string | null }>()
 
 /** Bump when chapter parsing changes so a running app does not keep stale lists. */
-const CHAPTER_CACHE_SCHEMA = 1
+const CHAPTER_CACHE_SCHEMA = 2
 const chapterCache = new Map<string, { mtimeMs: number; chapters: MediaChapter[] }>()
 
 function embeddedTitleCacheKey(relPath: string): string {
