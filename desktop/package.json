@@ -13,7 +13,7 @@
     "pack": "bun run build && electron-builder --dir",
     "dist": "bun run build && electron-builder",
     "dist:win": "bun run build && electron-builder --win",
-    "dist:mac": "bun run build && electron-builder --mac",
+    "dist:mac": "bun ./scripts/generate-icon.mjs --mac && electron-vite build && electron-builder --mac",
     "postinstall": "bun ./scripts/run-postinstall.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },

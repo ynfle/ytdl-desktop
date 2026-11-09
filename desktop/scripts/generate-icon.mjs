@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { deflateSync } from 'node:zlib'
@@ -247,11 +247,27 @@ const icoBuffer = buildIcoBuffer([256, 128, 64, 48, 32, 16])
 writeFileSync(icoPath, icoBuffer)
 console.info(`[generate-icon] Wrote multi-size ICO (${icoBuffer.length} bytes) to ${icoPath}`)
 
-// Ensure macOS .pkg postinstall script uses LF line endings and has 0755 executable permissions.
-const macPostinstall = path.resolve(scriptDir, '..', 'installer', 'mac', 'pkg-scripts', 'postinstall')
-if (existsSync(macPostinstall)) {
-  const normalizedLf = readFileSync(macPostinstall, 'utf-8').replace(/\r\n/g, '\n')
-  writeFileSync(macPostinstall, normalizedLf, 'utf-8')
-  chmodSync(macPostinstall, 0o755)
-  console.info(`[generate-icon] Prepared macOS pkg postinstall script (LF + 0755): ${macPostinstall}`)
+// pkgbuild only runs scripts that are executable and use LF line endings.
+// Windows builds do not package a .pkg, so this stays off unless --mac is passed
+// (desktop package.json "dist:mac").
+const prepareMacScripts = process.argv.includes('--mac')
+if (!prepareMacScripts) {
+  console.info('[generate-icon] Skipping macOS pkg scripts (Windows / dev build).')
+} else {
+  const macScriptsDir = path.resolve(scriptDir, '..', 'installer', 'mac', 'pkg-scripts')
+  console.info(`[generate-icon] Preparing macOS pkg scripts in ${macScriptsDir}`)
+  if (!existsSync(macScriptsDir)) {
+    console.info('[generate-icon] macOS pkg scripts directory is missing; nothing to prepare.')
+  } else {
+    for (const entry of readdirSync(macScriptsDir, { withFileTypes: true })) {
+      if (!entry.isFile()) {
+        continue
+      }
+      const scriptPath = path.join(macScriptsDir, entry.name)
+      const normalizedLf = readFileSync(scriptPath, 'utf-8').replace(/\r\n/g, '\n')
+      writeFileSync(scriptPath, normalizedLf, 'utf-8')
+      chmodSync(scriptPath, 0o755)
+      console.info(`[generate-icon] Prepared macOS pkg script (LF + 0755): ${scriptPath}`)
+    }
+  }
 }

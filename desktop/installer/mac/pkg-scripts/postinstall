@@ -6,6 +6,16 @@
 
 set -u
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+# shellcheck source=ytdl-pkg-common.sh
+. "$SCRIPT_DIR/ytdl-pkg-common.sh"
+
+# The package wrote a staged copy. Move those files into the existing .app, if there is one.
+if ! ytdl_publish_staged_app "${2:-}" "${3:-}"; then
+  ytdl_log "postinstall aborting because the application was not published"
+  exit 1
+fi
+
 LOG_TAG="[ytdl-pkg-postinstall]"
 echo "$LOG_TAG starting postinstall configuration"
 

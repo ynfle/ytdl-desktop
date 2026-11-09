@@ -1,0 +1,13 @@
+#!/bin/bash
+# Runs before the package writes its payload.
+# The payload goes to a staging folder. This script does not modify the installed app.
+
+set -u
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+# shellcheck source=ytdl-pkg-common.sh
+. "$SCRIPT_DIR/ytdl-pkg-common.sh"
+
+ytdl_log "preinstall user='${USER:-}' pkg='${1:-}' dest='${2:-}' volume='${3:-}' root='${4:-}'"
+ytdl_log "preinstall leaving any existing YTDL Desktop.app in place"
+exit 0

@@ -12,6 +12,11 @@ asarUnpack:
   - out/preload/**
   - build/**
 npmRebuild: false
+# Use the Electron already installed by the electron package.
+# A Windows package build otherwise downloads the zip again and fetches
+# SHASUMS256.txt from GitHub. That response is sometimes an HTML error page,
+# and the build stops with "Could not parse checksum file".
+electronDist: node_modules/electron/dist
 win:
   icon: build/icon.ico
   executableName: YTDL Desktop
@@ -20,6 +25,8 @@ win:
       arch:
         - x64
 nsis:
+  # Same-folder upgrades overwrite files in place (installer/win/installer.nsh)
+  # so shortcuts and taskbar pins are not removed by an uninstall.
   include: installer/win/installer.nsh
   artifactName: ${productName}-Setup-${version}.${ext}
   shortcutName: ${productName}
@@ -42,11 +49,20 @@ mac:
         - arm64
         - x64
 pkg:
-  scripts: installer/mac/pkg-scripts
-  installLocation: /Applications
+  # Relative to directories.buildResources (desktop/build).
+  scripts: ../installer/mac/pkg-scripts
+  # Payload lands here, not on the live app. postinstall copies it into the
+  # existing .app so the Dock pin's bundle folder is never deleted.
+  installLocation: /Library/YTDL Desktop/staged
   allowAnywhere: false
   allowCurrentUserHome: true
   allowRootDirectory: true
+  overwriteAction: upgrade
+  isVersionChecked: false
+  isRelocatable: false
+  # The app has to be quit before its files can be replaced.
+  mustClose:
+    - com.ytdl.desktop
   artifactName: ${productName}-Installer-${version}-${arch}.${ext}
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
