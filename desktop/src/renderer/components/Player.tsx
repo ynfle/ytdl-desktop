@@ -416,14 +416,7 @@ function usePlayerChrome({
     [videoRef, remoteFloatingTransport, onFloatingSeek]
   )
 
-  const onScrub = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      seekTo(Number(e.target.value))
-    },
-    [seekTo]
-  )
-
-  /** Chapter menu / tick: same path as the scrubber, including floating PiP. */
+  /** Chapter menu: same path as the scrubber, including floating PiP. */
   const seekToChapter = useCallback(
     (chapter: MediaChapter) => {
       console.info('[Player] chapter seek', {
@@ -589,8 +582,7 @@ function usePlayerChrome({
             duration={barDuration}
             disabled={seekDisabled}
             valueText={seekValueText}
-            onScrub={onScrub}
-            onSeekChapter={seekToChapter}
+            onSeek={seekTo}
           />
           <span className="w-10 shrink-0 font-mono text-[10px] tabular-nums text-text-muted">
             {fmtTime(barDuration)}

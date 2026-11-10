@@ -225,6 +225,8 @@ input[type='range']::-webkit-slider-thumb:active {
 
 /* ── Transport bar glass effect ── */
 .transport-bar {
+  /* Chapter title floats above the bar; don't clip it to the 68px strip. */
+  overflow: visible;
   background: linear-gradient(
     180deg,
     rgba(15, 15, 19, 0.85) 0%,
